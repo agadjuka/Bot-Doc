@@ -40,6 +40,7 @@ class BotConfig:
         
         # Basic conversation states for template
         self.AWAITING_INPUT = 1
+        self.AWAITING_COMPANY_INFO = 2
         
         # Message settings
         self.MAX_MESSAGE_LENGTH = 4096

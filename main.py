@@ -70,6 +70,7 @@ try:
     from services.ai_service import AIService, ReceiptAnalysisServiceCompat, AIServiceFactory
     from handlers.message_handlers import MessageHandlers
     from handlers.callback_handlers import CallbackHandlers
+    from handlers.document_handler import DocumentHandler
     # IngredientStorage removed for template
     from utils.message_sender import MessageSender
     # Google Sheets handler removed for template
@@ -83,6 +84,7 @@ except ImportError as e:
     ReceiptAnalysisServiceCompat = None
     MessageHandlers = None
     CallbackHandlers = None
+    DocumentHandler = None
     # IngredientStorage removed for template
     MessageSender = None
     # get_google_sheets_ingredients = None  # Removed for template
@@ -199,7 +201,7 @@ def create_application() -> Application:
     """Create and configure the Telegram application"""
     # Check if all required modules are available
     if not all([BotConfig, PromptManager, AIService, ReceiptAnalysisServiceCompat, 
-                MessageHandlers, CallbackHandlers]):
+                MessageHandlers, CallbackHandlers, DocumentHandler]):
         raise ImportError("Required modules are not available")
     
     # Initialize configuration
@@ -221,6 +223,7 @@ def create_application() -> Application:
     # Initialize handlers AFTER LocaleManager is initialized
     message_handlers = MessageHandlers(config, analysis_service)
     callback_handlers = CallbackHandlers(config, analysis_service)
+    document_handlers = DocumentHandler(config, analysis_service)
     
     # Ingredient storage removed for template - not needed for basic bot functionality
     
@@ -231,15 +234,19 @@ def create_application() -> Application:
     # Services removed for template - only basic bot functionality remains
     print("✅ Template mode: Advanced services disabled")
 
-    # Create simple conversation handler for template
+    # Create conversation handler with document creation workflow
     conv_handler = ConversationHandler(
         entry_points=[
             CommandHandler("start", message_handlers.start),
             CommandHandler("help", message_handlers.help_command),
+            CommandHandler("new_contract", document_handlers.new_contract_command),
             MessageHandler(filters.TEXT & ~filters.COMMAND, message_handlers.handle_text)
         ],
         states={
-            # Basic states only for template
+            config.AWAITING_COMPANY_INFO: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, document_handlers.handle_company_info),
+                CommandHandler("cancel", document_handlers.cancel_document_creation)
+            ],
         },
         fallbacks=[
             CommandHandler("cancel", message_handlers.start),
@@ -472,4 +479,477 @@ async def webhook(request: Request):
 if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 8080))
+    uvicorn.run(app, host="0.0.0.0", port=port)
+            MessageHandler(filters.TEXT & ~filters.COMMAND, message_handlers.handle_text)
+
+        ],
+
+        states={
+
+            # Basic states only for template
+
+        },
+
+        fallbacks=[
+
+            CommandHandler("cancel", message_handlers.start),
+
+            CommandHandler("help", message_handlers.help_command)
+
+        ],
+
+        per_message=False
+
+    )
+
+
+
+    # Add handlersп
+
+    application.add_handler(conv_handler)
+
+    
+
+    # Add basic command handlers for template
+
+    application.add_handler(CommandHandler("start", message_handlers.start))
+
+    application.add_handler(CommandHandler("help", message_handlers.help_command))
+
+    
+
+    return application
+
+
+
+async def initialize_bot():
+
+    """Initialize the bot application and start background tasks"""
+
+    global application, TOKEN, TELEGRAM_API
+
+    
+
+    # Проверяем, не инициализирован ли уже бот
+
+    if application is not None:
+
+        print("⚠️ Бот уже инициализирован, пропускаем повторную инициализацию")
+
+        return
+
+    
+
+    print("🚀 Инициализация бота...")
+
+    
+
+    # Debug: Print all environment variables
+
+    print("🔍 Debug: Environment variables:")
+
+    for key, value in os.environ.items():
+
+        if any(keyword in key.upper() for keyword in ["TOKEN", "PROJECT", "WEBHOOK", "GOOGLE", "CREDENTIALS"]):
+
+            print(f"  {key}: {'*' * len(value) if value else 'NOT SET'}")
+
+    
+
+    # Check if BOT_TOKEN is available
+
+    TOKEN = os.getenv("BOT_TOKEN")
+
+    if not TOKEN:
+
+        print("❌ BOT_TOKEN не найден в переменных окружения")
+
+        print("🔍 Available env vars with 'BOT':", [k for k in os.environ.keys() if 'BOT' in k])
+
+        return
+
+    
+
+    TELEGRAM_API = f"https://api.telegram.org/bot{TOKEN}"
+
+    print("✅ BOT_TOKEN найден")
+
+    
+
+    # Create application
+
+    print("🔧 Создаем Telegram application...")
+
+    application = create_application()
+
+    print(f"✅ Application создан: {application}")
+
+    
+
+    # Ingredient storage and cleanup removed for template - not needed for basic bot functionality
+
+    
+
+    # Role initialization removed for template
+
+    
+
+    # Start keep-alive task - НЕ блокируем инициализацию бота
+
+    try:
+
+        await start_keep_alive_task()
+
+    except Exception as e:
+
+        print(f"⚠️ Keep-alive задача не запустилась при инициализации бота: {e}")
+
+        # НЕ прерываем инициализацию - keep-alive не критичен
+
+    
+
+    # Initialize the application
+
+    print("🔧 Инициализируем Telegram application...")
+
+    await application.initialize()
+
+    print("✅ Telegram application инициализирован")
+
+    
+
+    # Проверяем, что LocaleManager работает
+
+    try:
+
+        from config.locales.locale_manager import get_global_locale_manager
+
+        lm = get_global_locale_manager()
+
+        print(f"✅ LocaleManager проверен: {lm}")
+
+        if hasattr(lm, 'language_service') and lm.language_service and lm.language_service.db:
+
+            print("✅ LocaleManager подключен к Firestore")
+
+        else:
+
+            print("⚠️ LocaleManager НЕ подключен к Firestore")
+
+    except Exception as e:
+
+        print(f"❌ Ошибка проверки LocaleManager: {e}")
+
+    
+
+    print("🚀 Бот инициализирован для webhook режима")
+
+
+
+@app.on_event("startup")
+
+async def startup_event():
+
+    """Initialize bot on startup"""
+
+    print("🚀 Запуск приложения...")
+
+    
+
+    # Запускаем keep-alive задачу в фоне - НЕ блокируем запуск бота
+
+    try:
+
+        await start_keep_alive_task()
+
+    except Exception as e:
+
+        print(f"⚠️ Keep-alive задача не запустилась: {e}")
+
+        # НЕ прерываем запуск - keep-alive не критичен
+
+    
+
+    try:
+
+        await initialize_bot()
+
+    except Exception as e:
+
+        print(f"❌ Ошибка при инициализации бота: {e}")
+
+        import traceback
+
+        traceback.print_exc()
+
+        # Не прерываем запуск приложения, если бот не может инициализироваться
+
+
+
+@app.get("/")
+
+async def health_check():
+
+    """Health check endpoint for Cloud Run - OPTIMIZED"""
+
+    return {
+
+        "status": "ok", 
+
+        "message": "AI Bot is running",
+
+        "application_initialized": application is not None,
+
+        "firestore_connected": db is not None,
+
+        "keep_alive_running": keep_alive_task_obj is not None and not keep_alive_task_obj.done()
+
+    }
+
+
+
+@app.post("/set_webhook")
+
+async def set_webhook(request: Request):
+
+    """Manual webhook setup endpoint"""
+
+    try:
+
+        data = await request.json()
+
+        webhook_url = data.get("webhook_url")
+
+        if not webhook_url:
+
+            raise HTTPException(status_code=400, detail="webhook_url is required")
+
+        
+
+        if not application:
+
+            raise HTTPException(status_code=500, detail="Bot not initialized")
+
+        
+
+        result = await application.bot.set_webhook(
+
+            url=f"{webhook_url}/webhook",
+
+            drop_pending_updates=True
+
+        )
+
+        
+
+        return {
+
+            "status": "success", 
+
+            "webhook_url": f"{webhook_url}/webhook",
+
+            "result": result
+
+        }
+
+    except Exception as e:
+
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+
+@app.get("/get_webhook")
+
+async def get_webhook():
+
+    """Get current webhook info"""
+
+    try:
+
+        if not application:
+
+            raise HTTPException(status_code=500, detail="Bot not initialized")
+
+        
+
+        webhook_info = await application.bot.get_webhook_info()
+
+        
+
+        return {
+
+            "webhook_info": webhook_info.to_dict()
+
+        }
+
+    except Exception as e:
+
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+
+@app.get("/debug")
+
+async def debug_info():
+
+    """Debug information endpoint"""
+
+    from config.locales.locale_manager import get_global_locale_manager
+
+    
+
+    locale_manager_status = "Not initialized"
+
+    try:
+
+        lm = get_global_locale_manager()
+
+        locale_manager_status = "Initialized"
+
+        if hasattr(lm, 'language_service') and lm.language_service:
+
+            if lm.language_service.db:
+
+                locale_manager_status += " with Firestore"
+
+            else:
+
+                locale_manager_status += " without Firestore"
+
+    except Exception as e:
+
+        locale_manager_status = f"Error: {str(e)}"
+
+    
+
+    return {
+
+        "application_initialized": application is not None,
+
+        "firestore_connected": db is not None,
+
+        "bot_token_set": TOKEN is not None,
+
+        "locale_manager_status": locale_manager_status,
+
+        "keep_alive_active": True,  # Keep-alive всегда активен, если сервер работает
+
+        "environment_vars": {
+
+            "BOT_TOKEN": "***" if os.getenv("BOT_TOKEN") else "NOT SET",
+
+            "PROJECT_ID": "***" if os.getenv("PROJECT_ID") else "NOT SET",
+
+            "WEBHOOK_URL": "***" if os.getenv("WEBHOOK_URL") else "NOT SET",
+
+            "GOOGLE_APPLICATION_CREDENTIALS_JSON": "***" if os.getenv("GOOGLE_APPLICATION_CREDENTIALS_JSON") else "NOT SET"
+
+        },
+
+        "template_mode": True
+
+    }
+
+
+
+@app.get("/keepalive")
+
+async def keepalive_check():
+
+    """Keep-alive check endpoint - OPTIMIZED"""
+
+    import datetime
+
+    current_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    
+
+    return {
+
+        "status": "alive",
+
+        "timestamp": current_time,
+
+        "application_initialized": application is not None,
+
+        "keep_alive_running": keep_alive_task_obj is not None and not keep_alive_task_obj.done(),
+
+        "message": "Keep-alive check successful"
+
+    }
+
+
+
+
+
+@app.post("/webhook")
+
+async def webhook(request: Request):
+
+    """Webhook endpoint for Telegram updates - ULTRA-OPTIMIZED VERSION"""
+
+    try:
+
+        # Get the update from Telegram
+
+        update_data = await request.json()
+
+        
+
+        if not update_data:
+
+            return {"ok": True}
+
+        
+
+        if not application:
+
+            return {"ok": True, "error": "Bot not initialized"}
+
+        
+
+        # Process update normally for template
+
+        try:
+
+            update = Update.de_json(update_data, application.bot)
+
+            
+
+            if not update:
+
+                return {"ok": True}
+
+            
+
+            # Process all updates normally
+
+            await application.process_update(update)
+
+            return {"ok": True}
+
+            
+
+        except Exception as e:
+
+            print(f"❌ Ошибка при обработке update: {e}")
+
+            return {"ok": True, "error": f"Processing error: {str(e)}"}
+
+        
+
+    except Exception as e:
+
+        print(f"❌ Ошибка при обработке webhook: {e}")
+
+        return {"ok": True, "error": str(e)}
+
+
+
+if __name__ == "__main__":
+
+    import uvicorn
+
+    port = int(os.environ.get("PORT", 8080))
+
     uvicorn.run(app, host="0.0.0.0", port=port)

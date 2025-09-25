@@ -18,8 +18,8 @@ from telegram.ext import (
 from telegram.error import Conflict, NetworkError
 from config.locales.locale_manager import initialize_locale_manager
 
-# Загружаем переменные окружения из .env файла
-load_dotenv()
+# Загружаем переменные окружения из env.local файла
+load_dotenv("env.local")
 
 # Инициализация клиента Firestore
 # Этот код будет работать автоматически в Cloud Run
@@ -46,6 +46,7 @@ from config.prompts import PromptManager
 from services.ai_service import AIService, ReceiptAnalysisServiceCompat, AIServiceFactory
 from handlers.message_handlers import MessageHandlers
 from handlers.callback_handlers import CallbackHandlers
+from handlers.document_handler import DocumentHandler
 from utils.message_sender import MessageSender
 # Google Sheets handler removed for template
 
@@ -122,6 +123,7 @@ def main() -> None:
     # Initialize handlers
     message_handlers = MessageHandlers(config, analysis_service)
     callback_handlers = CallbackHandlers(config, analysis_service)
+    document_handlers = DocumentHandler(config, analysis_service)
     
     # Initialize message sender for centralized message sending
     # Example usage:
@@ -138,15 +140,19 @@ def main() -> None:
     # Services removed for template - only basic bot functionality remains
     print("✅ Template mode: Advanced services disabled")
 
-    # Create simple conversation handler for template
+    # Create conversation handler with document creation workflow
     conv_handler = ConversationHandler(
         entry_points=[
             CommandHandler("start", message_handlers.start),
             CommandHandler("help", message_handlers.help_command),
+            CommandHandler("new_contract", document_handlers.new_contract_command),
             MessageHandler(filters.TEXT & ~filters.COMMAND, message_handlers.handle_text)
         ],
         states={
-            # Basic states only for template
+            config.AWAITING_COMPANY_INFO: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, document_handlers.handle_company_info),
+                CommandHandler("cancel", document_handlers.cancel_document_creation)
+            ],
         },
         fallbacks=[
             CommandHandler("cancel", message_handlers.start),

@@ -15,6 +15,10 @@ class BotConfig:
         self.BOT_TOKEN: str = secrets.BOT_TOKEN
         self.PHOTO_FILE_NAME: str = "last_photo.jpg"
         
+        # Перечитываем токены из переменных окружения
+        secrets._reload_tokens()
+        self.BOT_TOKEN = secrets.BOT_TOKEN
+        
         
         # Google Sheets settings removed for template
         

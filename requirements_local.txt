@@ -10,3 +10,7 @@ anyio==3.7.1
 
 # For local development
 python-dotenv==1.0.0
+
+# Document generation
+docxtpl==0.20.1
+python-docx==1.2.0

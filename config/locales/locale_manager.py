@@ -41,13 +41,9 @@ class LocaleManager:
         self._initialized = True
     
     def get_user_language_from_storage(self, user_id: int) -> str:
-        """Get user language from Firestore"""
-        if not user_id:
-            return self._default_lang
-        stored_language = self.language_service.get_user_language(user_id)
-        if stored_language and self.is_language_supported(stored_language):
-            return stored_language
-        return self._default_lang
+        """Get user language, always default to Russian for now"""
+        # For now, always return Russian to avoid Firestore dependency
+        return 'ru'
     
     def load_user_language_on_start(self, context: Any, update: Any = None) -> str:
         """Load user language from Firestore when user starts interaction"""
@@ -274,6 +270,25 @@ class LocaleManager:
         translations = self._translations.get(language, self._translations[self._default_lang])
         return list(translations.keys())
     
+    def get_user_language(self, user_id: int) -> str:
+        """
+        Получает язык пользователя по user_id.
+        
+        Args:
+            user_id: ID пользователя
+            
+        Returns:
+            str: Код языка пользователя или язык по умолчанию
+        """
+        # Сначала пробуем получить из Firestore
+        stored_language = self.language_service.get_user_language(user_id)
+        
+        if stored_language and self.is_language_supported(stored_language):
+            return stored_language
+        
+        # Если не найден в Firestore, возвращаем язык по умолчанию
+        return self._default_lang
+
     def set_user_language(self, update_or_context: Any, context: Any = None, language: str = None) -> bool:
         """Set user language in context and save to Firestore"""
         # Handle both old and new calling conventions

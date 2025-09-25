@@ -6,7 +6,7 @@ Write-Host "Setting up environment variables for Bot Doc..." -ForegroundColor Gr
 $currentDir = Get-Location
 
 # Set environment variables for current session
-$env:GOOGLE_APPLICATION_CREDENTIALS = Join-Path $currentDir "google-cloud-credentials.json"
+$env:GOOGLE_APPLICATION_CREDENTIALS = Join-Path $currentDir "bot-doc-473208-706e6adceee1.json"
 $env:PROJECT_ID = "bot-doc-473208"
 $env:GOOGLE_CLOUD_LOCATION = "asia-southeast1"
 $env:FIRESTORE_DATABASE = "default"

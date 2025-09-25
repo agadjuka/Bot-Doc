@@ -17,7 +17,7 @@ from telegram.error import Conflict, NetworkError
 def setup_environment():
     """Setup environment from JSON file"""
     current_dir = os.getcwd()
-    json_file = os.path.join(current_dir, 'google-cloud-credentials.json')
+    json_file = os.path.join(current_dir, 'bot-doc-473208-706e6adceee1.json')
     
     if not os.path.exists(json_file):
         print(f"❌ JSON file not found: {json_file}")

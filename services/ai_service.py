@@ -7,6 +7,7 @@ import asyncio
 import os
 from typing import Dict, Any, Optional
 import google.generativeai as genai
+from google.oauth2 import service_account
 
 from config.settings import BotConfig
 from config.prompts import PromptManager
@@ -23,21 +24,32 @@ class AIService:
         self._initialize_gemini()
     
     def _initialize_gemini(self):
-        """Initialize Google Gemini AI service"""
+        """Initialize Google Gemini AI service using Google Cloud authentication"""
         try:
-            # Configure Gemini API
-            api_key = os.getenv("GEMINI_API_KEY")
-            if not api_key:
-                print("❌ GEMINI_API_KEY не найден в переменных окружения")
-                raise ValueError("GEMINI_API_KEY is required")
+            # Get credentials file path
+            credentials_path = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
+            if not credentials_path:
+                print("❌ GOOGLE_APPLICATION_CREDENTIALS не установлена")
+                raise ValueError("GOOGLE_APPLICATION_CREDENTIALS is required")
             
-            genai.configure(api_key=api_key)
+            if not os.path.exists(credentials_path):
+                print(f"❌ Файл учетных данных не найден: {credentials_path}")
+                raise FileNotFoundError(f"Credentials file not found: {credentials_path}")
+            
+            # Load service account credentials
+            credentials = service_account.Credentials.from_service_account_file(
+                credentials_path,
+                scopes=['https://www.googleapis.com/auth/generative-language']
+            )
+            
+            # Configure Gemini API with service account credentials
+            genai.configure(credentials=credentials)
             
             # Get model name
             model_name = self.config.get_model_name(self.model_type)
             self._model = genai.GenerativeModel(model_name)
             
-            print(f"✅ Gemini AI инициализирован с моделью: {model_name}")
+            print(f"✅ Gemini AI инициализирован с моделью: {model_name} (через Google Cloud аутентификацию)")
             
         except Exception as e:
             print(f"❌ Ошибка инициализации Gemini AI: {e}")

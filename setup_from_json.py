@@ -10,7 +10,7 @@ def setup_credentials_from_json():
     print("🔧 Setting up credentials from JSON file...")
     
     # Read the JSON file
-    json_file = "google-cloud-credentials.json"
+    json_file = "bot-doc-473208-706e6adceee1.json"
     if not os.path.exists(json_file):
         print(f"❌ JSON file not found: {json_file}")
         return False

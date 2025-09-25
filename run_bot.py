@@ -11,7 +11,7 @@ def setup_environment():
     current_dir = os.getcwd()
     
     # Set Google Cloud variables
-    os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = os.path.join(current_dir, 'google-cloud-credentials.json')
+    os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = os.path.join(current_dir, 'bot-doc-473208-706e6adceee1.json')
     os.environ['PROJECT_ID'] = 'bot-doc-473208'
     os.environ['GOOGLE_CLOUD_LOCATION'] = 'asia-southeast1'
     os.environ['FIRESTORE_DATABASE'] = 'default'

@@ -11,11 +11,19 @@ class SecretsConfig:
     
     def __init__(self):
         # Bot Token - токен Telegram бота (только из переменных окружения)
-        self.BOT_TOKEN: str = os.getenv("BOT_TOKEN", "")
+        self.BOT_TOKEN: str = ""
         
         
         # Google Cloud Project ID (из переменных окружения)
-        self.PROJECT_ID: str = os.getenv("PROJECT_ID", "")
+        self.PROJECT_ID: str = ""
+        
+        # Перечитываем переменные окружения
+        self._reload_tokens()
+    
+    def _reload_tokens(self):
+        """Перечитывает токены из переменных окружения"""
+        self.BOT_TOKEN = os.getenv("BOT_TOKEN", "")
+        self.PROJECT_ID = os.getenv("PROJECT_ID", "")
     
     def _get_env_var(self, env_name: str, default_value: str) -> str:
         """

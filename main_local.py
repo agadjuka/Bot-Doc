@@ -18,8 +18,51 @@ from telegram.ext import (
 from telegram.error import Conflict, NetworkError
 from config.locales.locale_manager import initialize_locale_manager
 
-# Загружаем переменные окружения из env.local файла
+# КРИТИЧЕСКИ ВАЖНО: Загружаем переменные окружения ПЕРВЫМ ДЕЛОМ
 load_dotenv("env.local")
+
+# АВТОМАТИЧЕСКАЯ НАСТРОЙКА ПЕРЕМЕННЫХ ОКРУЖЕНИЯ
+def setup_environment():
+    """Автоматически настраивает переменные окружения для работы бота"""
+    
+    # Проверяем BOT_TOKEN
+    bot_token = os.environ.get("BOT_TOKEN")
+    if not bot_token:
+        print("❌ BOT_TOKEN не найден в переменных окружения!")
+        print("💡 Проверьте файл env.local")
+        return False
+    else:
+        print(f"✅ BOT_TOKEN найден: {bot_token[:10]}...")
+    
+    # Путь к файлу с учетными данными
+    credentials_path = os.path.join(os.path.dirname(__file__), "bot-doc-473208-706e6adceee1.json")
+    
+    # Проверяем, существует ли файл с учетными данными
+    if os.path.exists(credentials_path):
+        # Устанавливаем переменную окружения если она не установлена
+        if not os.environ.get("GOOGLE_APPLICATION_CREDENTIALS"):
+            os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = credentials_path
+            print(f"✅ GOOGLE_APPLICATION_CREDENTIALS установлена: {credentials_path}")
+        else:
+            print(f"✅ GOOGLE_APPLICATION_CREDENTIALS уже установлена: {os.environ.get('GOOGLE_APPLICATION_CREDENTIALS')}")
+    else:
+        print(f"❌ Файл с учетными данными не найден: {credentials_path}")
+        return False
+    
+    # Устанавливаем имя базы данных Firestore
+    if not os.environ.get("FIRESTORE_DATABASE"):
+        os.environ["FIRESTORE_DATABASE"] = "docbot"
+        print("✅ FIRESTORE_DATABASE установлена: docbot")
+    else:
+        print(f"✅ FIRESTORE_DATABASE уже установлена: {os.environ.get('FIRESTORE_DATABASE')}")
+    
+    return True
+
+# Настраиваем переменные окружения
+print("🔧 Настройка переменных окружения...")
+if not setup_environment():
+    print("❌ Не удалось настроить переменные окружения")
+    exit(1)
 
 # Инициализация клиента Firestore
 # Этот код будет работать автоматически в Cloud Run
@@ -29,7 +72,7 @@ from google.cloud import firestore
 # Инициализация клиента Firestore с обработкой ошибок
 try:
     # Получаем имя базы данных из переменных окружения
-    database_name = os.getenv("FIRESTORE_DATABASE", "default")
+    database_name = os.getenv("FIRESTORE_DATABASE", "docbot")
     db = firestore.Client(database=database_name)
     print(f"✅ Firestore клиент инициализирован успешно (база: {database_name})")
 except Exception as e:
@@ -103,6 +146,8 @@ def safe_start_bot(application: Application, max_retries: int = 3) -> None:
 
 def main() -> None:
     """Main function to start the bot"""
+    # Токен уже проверен в setup_environment()
+    
     # Initialize configuration
     config = BotConfig()
     prompt_manager = PromptManager()
@@ -149,6 +194,11 @@ def main() -> None:
             MessageHandler(filters.TEXT & ~filters.COMMAND, message_handlers.handle_text)
         ],
         states={
+            config.AWAITING_INPUT: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, message_handlers.handle_text),
+                CommandHandler("help", message_handlers.help_command),
+                CommandHandler("new_contract", document_handlers.new_contract_command)
+            ],
             config.AWAITING_COMPANY_INFO: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, document_handlers.handle_company_info),
                 CommandHandler("cancel", document_handlers.cancel_document_creation)
@@ -163,10 +213,6 @@ def main() -> None:
 
     # Add handlers
     application.add_handler(conv_handler)
-    
-    # Add basic command handlers for template
-    application.add_handler(CommandHandler("start", message_handlers.start))
-    application.add_handler(CommandHandler("help", message_handlers.help_command))
     
     # Role initialization removed for template
 

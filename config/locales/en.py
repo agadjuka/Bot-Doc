@@ -40,5 +40,6 @@ EN_TRANSLATIONS = {
         "new_contract_start": "📄 **Creating new document.**\n\nPlease copy and send me the company details (company card) in one message. I will analyze them and prepare the document.",
         "info_received": "✅ Information received. Starting processing...",
         "creation_cancelled": "❌ Document creation cancelled.",
+        "creation_success": "🎉 Document successfully created and sent!",
     },
 }

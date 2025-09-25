@@ -1,0 +1,14 @@
+# Basic dependencies for template bot
+python-telegram-bot==20.7
+google-generativeai==0.8.3
+google-cloud-firestore==2.13.1
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+
+# Async libraries
+httpx==0.25.2
+aiofiles==23.2.1
+anyio==3.7.1
+
+# Environment management
+python-dotenv==1.0.0

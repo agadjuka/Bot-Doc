@@ -35,6 +35,16 @@ class CallbackHandlers:
             await self._handle_language_callback(update, context, language)
         elif callback_data.startswith("lang_"):
             await self._handle_language_selection(update, context, callback_data)
+        elif callback_data == "dashboard":
+            await self._handle_dashboard_callback(update, context, language)
+        elif callback_data == "add_template":
+            await self._handle_add_template_callback(update, context, language)
+        elif callback_data == "my_templates":
+            await self._handle_my_templates_callback(update, context, language)
+        elif callback_data == "back_to_main":
+            await self._handle_back_to_main_callback(update, context, language)
+        elif callback_data == "back_to_dashboard":
+            await self._handle_back_to_dashboard_callback(update, context, language)
         else:
             await self._handle_unknown_callback(update, context, language)
         
@@ -151,3 +161,63 @@ Just send any text message and the bot will respond using AI!
             'ru': "Неизвестная команда. Попробуйте еще раз."
         }
         return messages.get(language, messages['en'])
+    
+    async def _handle_dashboard_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE, language: str):
+        """Handle dashboard callback - redirect to dashboard handler"""
+        from handlers.dashboard_handler import DashboardHandler
+        from config.settings import BotConfig
+        
+        # Create dashboard handler instance
+        config = BotConfig()
+        dashboard_handler = DashboardHandler(config)
+        
+        # Call the dashboard_command method
+        await dashboard_handler.dashboard_command(update, context)
+    
+    async def _handle_add_template_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE, language: str):
+        """Handle add template callback - redirect to dashboard handler"""
+        from handlers.dashboard_handler import DashboardHandler
+        from config.settings import BotConfig
+        
+        # Create dashboard handler instance
+        config = BotConfig()
+        dashboard_handler = DashboardHandler(config)
+        
+        # Call the add_template_callback method
+        await dashboard_handler.add_template_callback(update, context)
+    
+    async def _handle_my_templates_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE, language: str):
+        """Handle my templates callback - redirect to dashboard handler"""
+        from handlers.dashboard_handler import DashboardHandler
+        from config.settings import BotConfig
+        
+        # Create dashboard handler instance
+        config = BotConfig()
+        dashboard_handler = DashboardHandler(config)
+        
+        # Call the my_templates_callback method
+        await dashboard_handler.my_templates_callback(update, context)
+    
+    async def _handle_back_to_main_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE, language: str):
+        """Handle back to main callback - redirect to dashboard handler"""
+        from handlers.dashboard_handler import DashboardHandler
+        from config.settings import BotConfig
+        
+        # Create dashboard handler instance
+        config = BotConfig()
+        dashboard_handler = DashboardHandler(config)
+        
+        # Call the back_to_main_callback method
+        await dashboard_handler.back_to_main_callback(update, context)
+    
+    async def _handle_back_to_dashboard_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE, language: str):
+        """Handle back to dashboard callback - redirect to dashboard handler"""
+        from handlers.dashboard_handler import DashboardHandler
+        from config.settings import BotConfig
+        
+        # Create dashboard handler instance
+        config = BotConfig()
+        dashboard_handler = DashboardHandler(config)
+        
+        # Call the back_to_dashboard_callback method
+        await dashboard_handler.back_to_dashboard_callback(update, context)

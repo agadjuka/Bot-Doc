@@ -56,6 +56,16 @@ class MessageHandlers(BaseMessageHandler):
         
         return self.config.AWAITING_INPUT
     
+    async def dashboard_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+        """Handle /dashboard command - redirect to dashboard handler"""
+        from handlers.dashboard_handler import DashboardHandler
+        
+        # Create dashboard handler instance
+        dashboard_handler = DashboardHandler(self.config)
+        
+        # Call the dashboard_command method
+        return await dashboard_handler.dashboard_command(update, context)
+    
     async def handle_text(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         """Handle text messages"""
         user_id = update.effective_user.id
@@ -76,6 +86,33 @@ class MessageHandlers(BaseMessageHandler):
             )
         
         return self.config.AWAITING_INPUT
+    
+    async def handle_document(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+        """Handle document uploads - redirect to dashboard handler for template processing"""
+        from handlers.dashboard_handler import DashboardHandler
+        
+        # Create dashboard handler instance
+        dashboard_handler = DashboardHandler(self.config)
+        
+        # Check if user is in template addition state
+        if context.user_data.get('state') == dashboard_handler.AWAITING_TEMPLATE_FILE:
+            return await dashboard_handler.handle_template_file(update, context)
+        else:
+            # If not in template state, show message about using dashboard
+            user_id = update.effective_user.id
+            language = self.locale_manager.get_user_language(user_id)
+            
+            message_text = {
+                'en': "📄 <b>Document Upload</b>\n\nTo add a template, please use the Personal Cabinet:\n1. Click 'Personal Cabinet' button\n2. Click 'Add New Template'\n3. Upload your .docx file",
+                'ru': "📄 <b>Загрузка документа</b>\n\nЧтобы добавить шаблон, используйте Личный кабинет:\n1. Нажмите кнопку 'Личный кабинет'\n2. Нажмите 'Добавить новый шаблон'\n3. Загрузите ваш .docx файл"
+            }
+            
+            await update.message.reply_text(
+                message_text.get(language, message_text['en']),
+                parse_mode='HTML'
+            )
+            
+            return self.config.AWAITING_INPUT
     
     def _get_welcome_message(self, language: str) -> str:
         """Get welcome message based on language"""
@@ -145,10 +182,12 @@ Just send any text message and the bot will respond using AI!
         """Get main keyboard based on language"""
         buttons = {
             'en': [
+                [InlineKeyboardButton("🏠 Personal Cabinet", callback_data="dashboard")],
                 [InlineKeyboardButton("Help", callback_data="help")],
                 [InlineKeyboardButton("Language", callback_data="language")]
             ],
             'ru': [
+                [InlineKeyboardButton("🏠 Личный кабинет", callback_data="dashboard")],
                 [InlineKeyboardButton("Помощь", callback_data="help")],
                 [InlineKeyboardButton("Язык", callback_data="language")]
             ]

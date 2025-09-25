@@ -247,15 +247,18 @@ def create_application() -> Application:
         entry_points=[
             CommandHandler("start", message_handlers.start),
             CommandHandler("help", message_handlers.help_command),
-            CommandHandler("dashboard", dashboard_conv_handler.dashboard_command),
+            CommandHandler("dashboard", message_handlers.dashboard_command),
             CommandHandler("new_contract", document_handlers.new_contract_command),
-            MessageHandler(filters.TEXT & ~filters.COMMAND, message_handlers.handle_text)
+            MessageHandler(filters.TEXT & ~filters.COMMAND, message_handlers.handle_text),
+            CallbackQueryHandler(callback_handlers.handle_callback_query)
         ],
         states={
             config.AWAITING_INPUT: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, message_handlers.handle_text),
                 CommandHandler("help", message_handlers.help_command),
-                CommandHandler("new_contract", document_handlers.new_contract_command)
+                CommandHandler("dashboard", message_handlers.dashboard_command),
+                CommandHandler("new_contract", document_handlers.new_contract_command),
+                CallbackQueryHandler(callback_handlers.handle_callback_query)
             ],
             config.AWAITING_COMPANY_INFO: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, document_handlers.handle_company_info),

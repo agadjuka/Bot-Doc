@@ -54,6 +54,9 @@ class DashboardHandler:
         user_id = update.effective_user.id
         language = self.locale_manager.get_user_language(user_id)
         
+        # Set state in context
+        context.user_data['state'] = self.AWAITING_TEMPLATE_FILE
+        
         # Start template addition FSM
         message_text = self._get_template_file_request_message(language)
         
@@ -93,6 +96,7 @@ class DashboardHandler:
         # Store file_id in context for later use
         context.user_data['template_file_id'] = document.file_id
         context.user_data['template_file_name'] = file_name
+        context.user_data['state'] = self.AWAITING_TEMPLATE_NAME
         
         # Ask for template name
         message_text = self._get_template_name_request_message(language)
@@ -139,6 +143,7 @@ class DashboardHandler:
             # Clear context data
             context.user_data.pop('template_file_id', None)
             context.user_data.pop('template_file_name', None)
+            context.user_data.pop('state', None)
             
             # Send success message
             success_message = self._get_template_saved_message(language, template_name)
@@ -190,6 +195,7 @@ class DashboardHandler:
         # Clear context data
         context.user_data.pop('template_file_id', None)
         context.user_data.pop('template_file_name', None)
+        context.user_data.pop('state', None)
         
         # Send cancellation message
         await update.message.reply_text(

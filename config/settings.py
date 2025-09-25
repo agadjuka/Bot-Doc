@@ -28,6 +28,9 @@ class BotConfig:
         self.LOCATION: str = os.getenv("GOOGLE_CLOUD_LOCATION", "asia-southeast1")  # Сингапур для Flash-модели
         self.LOCATION_GLOBAL: str = "global"  # Global для Pro-модели
         
+        # Storage settings
+        self.STORAGE_BUCKET_NAME: str = os.getenv("STORAGE_BUCKET_NAME", "docbot-templates")
+        
         # AI Model settings - simplified for template
         self.MODEL_NAME: str = "gemini-2.5-flash"  # Basic model for template
         self.DEFAULT_MODEL: str = "flash"  # Default model type (pro/flash)
@@ -45,6 +48,11 @@ class BotConfig:
         # Basic conversation states for template
         self.AWAITING_INPUT = 1
         self.AWAITING_COMPANY_INFO = 2
+        
+        # Template management states
+        self.AWAITING_TEMPLATE_UPLOAD = 3
+        self.AWAITING_TEMPLATE_CONFIRMATION = 4
+        self.AWAITING_TEMPLATE_NAME = 5
         
         # Message settings
         self.MAX_MESSAGE_LENGTH = 4096

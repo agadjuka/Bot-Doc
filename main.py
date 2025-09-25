@@ -75,6 +75,8 @@ try:
     from handlers.callback_handlers import CallbackHandlers
     from handlers.document_handler import DocumentHandler
     from handlers.dashboard_handler import create_dashboard_conversation_handler
+    from handlers.template_management_handler import TemplateManagementHandler
+    from services.firestore_service import get_firestore_service
     # IngredientStorage removed for template
     # MessageSender removed for template
     # Google Sheets handler removed for template
@@ -90,6 +92,8 @@ except ImportError as e:
     CallbackHandlers = None
     DocumentHandler = None
     create_dashboard_conversation_handler = None
+    TemplateManagementHandler = None
+    get_firestore_service = None
     # IngredientStorage removed for template
     # MessageSender removed for template
     # get_google_sheets_ingredients = None  # Removed for template
@@ -206,7 +210,8 @@ def create_application() -> Application:
     """Create and configure the Telegram application"""
     # Check if all required modules are available
     if not all([BotConfig, PromptManager, AIService, ReceiptAnalysisServiceCompat, 
-                MessageHandlers, CallbackHandlers, DocumentHandler, create_dashboard_conversation_handler]):
+                MessageHandlers, CallbackHandlers, DocumentHandler, create_dashboard_conversation_handler,
+                TemplateManagementHandler, get_firestore_service]):
         raise ImportError("Required modules are not available")
     
     # Initialize configuration
@@ -230,8 +235,39 @@ def create_application() -> Application:
     callback_handlers = CallbackHandlers(config, analysis_service)
     document_handlers = DocumentHandler(config, analysis_service)
     
+    # Initialize Firestore service
+    firestore_service = get_firestore_service(db)
+    
+    # Initialize template management handler
+    template_handler = TemplateManagementHandler(config, firestore_service)
+    
     # Create dashboard conversation handler
     dashboard_conv_handler = create_dashboard_conversation_handler(config)
+    
+    # Create template management conversation handler
+    template_conv_handler = ConversationHandler(
+        entry_points=[
+            CommandHandler("templates", template_handler.templates_command),
+            CallbackQueryHandler(template_handler.start_template_upload, pattern="^upload_template$")
+        ],
+        states={
+            config.AWAITING_TEMPLATE_UPLOAD: [
+                MessageHandler(filters.Document.ALL, template_handler.handle_template_upload),
+                CommandHandler("cancel", template_handler.cancel_template_upload)
+            ],
+            config.AWAITING_TEMPLATE_CONFIRMATION: [
+                CallbackQueryHandler(template_handler.handle_template_confirmation, pattern="^(confirm_template|cancel_template)$")
+            ],
+            config.AWAITING_TEMPLATE_NAME: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, template_handler.handle_template_name),
+                CommandHandler("cancel", template_handler.cancel_template_upload)
+            ]
+        },
+        fallbacks=[
+            CommandHandler("cancel", template_handler.cancel_template_upload)
+        ],
+        per_message=False
+    )
     
     # Ingredient storage removed for template - not needed for basic bot functionality
     
@@ -249,6 +285,7 @@ def create_application() -> Application:
             CommandHandler("help", message_handlers.help_command),
             CommandHandler("dashboard", message_handlers.dashboard_command),
             CommandHandler("new_contract", document_handlers.new_contract_command),
+            CommandHandler("templates", template_handler.templates_command),
             MessageHandler(filters.TEXT & ~filters.COMMAND, message_handlers.handle_text),
             CallbackQueryHandler(callback_handlers.handle_callback_query)
         ],
@@ -275,6 +312,7 @@ def create_application() -> Application:
     # Add handlers
     application.add_handler(conv_handler)
     application.add_handler(dashboard_conv_handler)
+    application.add_handler(template_conv_handler)
     
     # Add basic command handlers for template
     application.add_handler(CommandHandler("start", message_handlers.start))

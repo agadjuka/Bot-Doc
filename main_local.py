@@ -112,6 +112,8 @@ from handlers.message_handlers import MessageHandlers
 from handlers.callback_handlers import CallbackHandlers
 from handlers.document_handler import DocumentHandler
 from handlers.dashboard_handler import create_dashboard_conversation_handler
+from handlers.template_management_handler import TemplateManagementHandler
+from services.firestore_service import get_firestore_service
 # MessageSender removed for template
 # Google Sheets handler removed for template
 
@@ -192,8 +194,39 @@ def main() -> None:
     callback_handlers = CallbackHandlers(config, analysis_service)
     document_handlers = DocumentHandler(config, analysis_service)
     
+    # Initialize Firestore service
+    firestore_service = get_firestore_service(db)
+    
+    # Initialize template management handler
+    template_handler = TemplateManagementHandler(config, firestore_service)
+    
     # Create dashboard conversation handler
     dashboard_conv_handler = create_dashboard_conversation_handler(config)
+    
+    # Create template management conversation handler
+    template_conv_handler = ConversationHandler(
+        entry_points=[
+            CommandHandler("templates", template_handler.templates_command),
+            CallbackQueryHandler(template_handler.start_template_upload, pattern="^upload_template$")
+        ],
+        states={
+            config.AWAITING_TEMPLATE_UPLOAD: [
+                MessageHandler(filters.Document.ALL, template_handler.handle_template_upload),
+                CommandHandler("cancel", template_handler.cancel_template_upload)
+            ],
+            config.AWAITING_TEMPLATE_CONFIRMATION: [
+                CallbackQueryHandler(template_handler.handle_template_confirmation, pattern="^(confirm_template|cancel_template)$")
+            ],
+            config.AWAITING_TEMPLATE_NAME: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, template_handler.handle_template_name),
+                CommandHandler("cancel", template_handler.cancel_template_upload)
+            ]
+        },
+        fallbacks=[
+            CommandHandler("cancel", template_handler.cancel_template_upload)
+        ],
+        per_message=False
+    )
     
     # Initialize message sender for centralized message sending
     # Example usage:
@@ -217,6 +250,7 @@ def main() -> None:
             CommandHandler("help", message_handlers.help_command),
             CommandHandler("dashboard", message_handlers.dashboard_command),
             CommandHandler("new_contract", document_handlers.new_contract_command),
+            CommandHandler("templates", template_handler.templates_command),
             MessageHandler(filters.TEXT & ~filters.COMMAND, message_handlers.handle_text),
             MessageHandler(filters.Document.ALL, message_handlers.handle_document),
             CallbackQueryHandler(callback_handlers.handle_callback_query)
@@ -242,9 +276,10 @@ def main() -> None:
         per_message=False
     )
 
-    # Add handlers
-    application.add_handler(conv_handler)
-    application.add_handler(dashboard_conv_handler)
+    # Add handlers - IMPORTANT: Order matters! More specific handlers should be added first
+    application.add_handler(template_conv_handler)  # Template handler first (handles upload_template)
+    application.add_handler(dashboard_conv_handler)  # Dashboard handler second
+    application.add_handler(conv_handler)  # General handler last (catches everything else)
     
     # Role initialization removed for template
 

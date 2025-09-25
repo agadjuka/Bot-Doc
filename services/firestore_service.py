@@ -33,25 +33,27 @@ class FirestoreService:
         else:
             print("❌ FirestoreService initialized without Firestore - operations will fail")
     
-    async def add_template(self, user_id: int, template_name: str, file_id: str, file_type: str = 'docx') -> bool:
+    async def add_template(self, user_id: int, template_name: str, file_path: str, file_type: str = 'docx') -> bool:
         """
         Add a new document template to user's collection
         
         Args:
             user_id: Telegram user ID
             template_name: Name of the template
-            file_id: Telegram file ID
+            file_path: Path to the file in Google Cloud Storage
             file_type: Type of the file (default: 'docx')
             
         Returns:
             True if successful, False otherwise
         """
+        print(f"🔥 [FIRESTORE] Начинаю сохранение шаблона '{template_name}' для пользователя {user_id}")
+        
         if not self.db:
-            print("❌ Firestore not available")
+            print(f"❌ [FIRESTORE] Firestore недоступен")
             return False
         
-        if not template_name or not file_id:
-            print("❌ Template name and file_id are required")
+        if not template_name or not file_path:
+            print(f"❌ [FIRESTORE] Имя шаблона и путь к файлу обязательны")
             return False
         
         try:
@@ -59,29 +61,35 @@ class FirestoreService:
             user_ref = self.db.collection('users').document(str(user_id))
             
             # Check if user document exists, create if not
+            print(f"👤 [FIRESTORE] Проверяю существование пользователя {user_id}...")
             user_doc = user_ref.get()
             if not user_doc.exists:
+                print(f"👤 [FIRESTORE] Создаю документ пользователя {user_id}")
                 user_ref.set({
                     'created_at': datetime.now(),
                     'role': 'user'  # Default role
                 })
-                print(f"✅ Created user document for {user_id}")
+                print(f"✅ [FIRESTORE] Создан документ пользователя {user_id}")
+            else:
+                print(f"✅ [FIRESTORE] Пользователь {user_id} уже существует")
             
             # Add template to user's document_templates subcollection
+            print(f"📄 [FIRESTORE] Добавляю шаблон в коллекцию document_templates...")
             template_ref = user_ref.collection('document_templates').document()
             template_data = {
                 'template_name': template_name,
-                'file_id': file_id,
+                'file_path': file_path,
                 'file_type': file_type,
                 'created_at': datetime.now()
             }
             
             template_ref.set(template_data)
-            print(f"✅ Added template '{template_name}' for user {user_id}")
+            print(f"✅ [FIRESTORE] Шаблон '{template_name}' успешно добавлен для пользователя {user_id}")
+            print(f"📁 [FIRESTORE] Путь к файлу: {file_path}")
             return True
             
         except Exception as e:
-            print(f"❌ Error adding template: {e}")
+            print(f"❌ [FIRESTORE] Ошибка при добавлении шаблона: {e}")
             return False
     
     async def get_templates(self, user_id: int) -> List[Dict[str, Any]]:

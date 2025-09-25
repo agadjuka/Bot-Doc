@@ -118,20 +118,34 @@ class TemplateProcessorService:
             - field_names: List of human-readable field names in Russian
         """
         try:
+            print(f"📄 [GEMINI] Начинаю анализ документа размером {len(file_bytes)} байт")
+            
             # Step 1: Extract text from document
+            print(f"📖 [GEMINI] Извлекаю текст из DOCX файла...")
             document_text = self._extract_text_from_docx(file_bytes)
             
             if not document_text.strip():
+                print(f"⚠️ [GEMINI] Документ пустой или не удалось прочитать")
                 logger.warning("Document appears to be empty or could not be read")
                 return {}, []
+            
+            print(f"✅ [GEMINI] Извлечено {len(document_text)} символов текста")
             
             # Step 2: Send request to Gemini
             prompt = self._create_analysis_prompt(document_text)
             
+            print(f"🤖 [GEMINI] Отправляю запрос в Gemini для анализа полей...")
             logger.info("Sending document analysis request to Gemini...")
             response = await self._send_gemini_request(prompt)
             
+            if not response:
+                print(f"❌ [GEMINI] Пустой ответ от Gemini")
+                return {}, []
+            
+            print(f"✅ [GEMINI] Получен ответ от Gemini: {len(response)} символов")
+            
             # Step 3: Parse Gemini response
+            print(f"🔍 [GEMINI] Парсю JSON ответ от Gemini...")
             field_data = self._parse_gemini_response(response)
             
             # Step 4: Create replacements dictionary and field names list
@@ -148,10 +162,12 @@ class TemplateProcessorService:
                     replacements[original_text] = placeholder
                     field_names.append(human_readable_name)
             
+            print(f"✅ [GEMINI] Анализ завершен. Найдено {len(field_data)} полей: {field_names}")
             logger.info(f"Document analysis completed. Found {len(field_data)} fields")
             return replacements, field_names
             
         except Exception as e:
+            print(f"❌ [GEMINI] Ошибка при анализе документа: {e}")
             logger.error(f"Error analyzing document: {e}")
             return {}, []
     
@@ -232,17 +248,21 @@ class TemplateProcessorService:
             Response from Gemini
         """
         try:
+            print(f"🚀 [GEMINI] Отправляю запрос в Gemini API...")
             # Generate content using Gemini
             response = self.model.generate_content(prompt)
             
             if response.text:
+                print(f"✅ [GEMINI] Получен ответ от Gemini: {len(response.text)} символов")
                 logger.info("Received response from Gemini")
                 return response.text
             else:
+                print(f"❌ [GEMINI] Пустой ответ от Gemini")
                 logger.error("Empty response from Gemini")
                 return ""
                 
         except Exception as e:
+            print(f"❌ [GEMINI] Ошибка при отправке запроса в Gemini: {e}")
             logger.error(f"Error sending request to Gemini: {e}")
             return ""
     
@@ -282,3 +302,87 @@ class TemplateProcessorService:
         except Exception as e:
             logger.error(f"Unexpected error parsing Gemini response: {e}")
             return []
+    
+    def create_smart_template(self, file_bytes: bytes, replacements: dict) -> bytes:
+        """
+        Create a smart template by applying replacements to a document.
+        
+        Args:
+            file_bytes: Document content as bytes
+            replacements: Dictionary mapping original text to replacement text
+            
+        Returns:
+            Modified document as bytes
+        """
+        try:
+            # Create BytesIO object from input bytes
+            doc_stream = BytesIO(file_bytes)
+            
+            # Load document using python-docx
+            doc = Document(doc_stream)
+            
+            logger.info(f"Processing document with {len(replacements)} replacements")
+            
+            # Process all paragraphs
+            for paragraph in doc.paragraphs:
+                if paragraph.text.strip():
+                    original_text = paragraph.text
+                    modified_text = self._apply_replacements(original_text, replacements)
+                    if modified_text != original_text:
+                        # Clear paragraph and add new text
+                        paragraph.clear()
+                        paragraph.add_run(modified_text)
+                        logger.debug(f"Updated paragraph: {original_text[:50]}... -> {modified_text[:50]}...")
+            
+            # Process all tables
+            for table in doc.tables:
+                for row in table.rows:
+                    for cell in row.cells:
+                        if cell.text.strip():
+                            original_text = cell.text
+                            modified_text = self._apply_replacements(original_text, replacements)
+                        if modified_text != original_text:
+                            # Clear cell content and add new text
+                            # Remove all existing paragraphs from the cell
+                            for paragraph in cell.paragraphs:
+                                for run in paragraph.runs:
+                                    run.clear()
+                                paragraph.clear()
+                            # Add new paragraph with modified text
+                            cell.add_paragraph(modified_text)
+                            logger.debug(f"Updated table cell: {original_text[:50]}... -> {modified_text[:50]}...")
+            
+            # Save modified document to memory
+            output_stream = BytesIO()
+            doc.save(output_stream)
+            output_bytes = output_stream.getvalue()
+            
+            logger.info(f"Smart template created successfully. Output size: {len(output_bytes)} bytes")
+            return output_bytes
+            
+        except Exception as e:
+            logger.error(f"Error creating smart template: {e}")
+            raise
+    
+    def _apply_replacements(self, text: str, replacements: dict) -> str:
+        """
+        Apply all replacements to a text string.
+        
+        Args:
+            text: Original text
+            replacements: Dictionary mapping original text to replacement text
+            
+        Returns:
+            Text with all replacements applied
+        """
+        modified_text = text
+        
+        # Apply replacements in order of length (longest first) to avoid partial replacements
+        sorted_replacements = sorted(replacements.items(), key=lambda x: len(x[0]), reverse=True)
+        
+        for original, replacement in sorted_replacements:
+            if original in modified_text:
+                modified_text = modified_text.replace(original, replacement)
+                logger.debug(f"Applied replacement: '{original}' -> '{replacement}'")
+        
+        return modified_text

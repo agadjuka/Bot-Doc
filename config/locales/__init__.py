@@ -7,7 +7,7 @@ from .locale_manager import LocaleManager
 from .language_buttons import get_language_keyboard, LANGUAGE_CODES, DISPLAY_TO_CODE
 from .ru import RU_TRANSLATIONS
 from .en import EN_TRANSLATIONS
-from .id import ID_TRANSLATIONS
+# ID_TRANSLATIONS removed for template
 
 # Глобальный экземпляр LocaleManager будет создан через initialize_locale_manager()
 # в main.py после инициализации Firestore
@@ -21,5 +21,5 @@ __all__ = [
     'DISPLAY_TO_CODE',
     'RU_TRANSLATIONS', 
     'EN_TRANSLATIONS',
-    'ID_TRANSLATIONS'
+    # 'ID_TRANSLATIONS'  # Removed for template
 ]

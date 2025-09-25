@@ -112,7 +112,7 @@ from handlers.message_handlers import MessageHandlers
 from handlers.callback_handlers import CallbackHandlers
 from handlers.document_handler import DocumentHandler
 from handlers.dashboard_handler import create_dashboard_conversation_handler
-from utils.message_sender import MessageSender
+# MessageSender removed for template
 # Google Sheets handler removed for template
 
 

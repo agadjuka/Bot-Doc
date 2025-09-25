@@ -76,7 +76,7 @@ try:
     from handlers.document_handler import DocumentHandler
     from handlers.dashboard_handler import create_dashboard_conversation_handler
     # IngredientStorage removed for template
-    from utils.message_sender import MessageSender
+    # MessageSender removed for template
     # Google Sheets handler removed for template
     print("✅ Все модули импортированы успешно")
 except ImportError as e:
@@ -91,7 +91,7 @@ except ImportError as e:
     DocumentHandler = None
     create_dashboard_conversation_handler = None
     # IngredientStorage removed for template
-    MessageSender = None
+    # MessageSender removed for template
     # get_google_sheets_ingredients = None  # Removed for template
 
 # Bot configuration - будет инициализирован позже

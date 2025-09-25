@@ -19,7 +19,10 @@ from telegram.error import Conflict, NetworkError
 from config.locales.locale_manager import initialize_locale_manager
 
 # КРИТИЧЕСКИ ВАЖНО: Загружаем переменные окружения ПЕРВЫМ ДЕЛОМ
-load_dotenv("env.local")
+# Используем абсолютный путь к файлу env.local
+env_path = os.path.join(os.path.dirname(__file__), "env.local")
+print(f"🔍 Загружаем переменные окружения из: {env_path}")
+load_dotenv(env_path)
 
 # АВТОМАТИЧЕСКАЯ НАСТРОЙКА ПЕРЕМЕННЫХ ОКРУЖЕНИЯ
 def setup_environment():
@@ -27,9 +30,27 @@ def setup_environment():
     
     # Проверяем BOT_TOKEN
     bot_token = os.environ.get("BOT_TOKEN")
+    
+    # Если токен не найден, пробуем загрузить напрямую из файла
+    if not bot_token:
+        print("⚠️ BOT_TOKEN не найден в переменных окружения, пробуем загрузить из файла...")
+        try:
+            env_file_path = os.path.join(os.path.dirname(__file__), "env.local")
+            if os.path.exists(env_file_path):
+                with open(env_file_path, 'r', encoding='utf-8') as f:
+                    for line in f:
+                        if line.strip().startswith('BOT_TOKEN='):
+                            bot_token = line.strip().split('=', 1)[1]
+                            os.environ["BOT_TOKEN"] = bot_token
+                            print(f"✅ BOT_TOKEN загружен из файла: {bot_token[:10]}...")
+                            break
+        except Exception as e:
+            print(f"❌ Ошибка при чтении файла env.local: {e}")
+    
     if not bot_token:
         print("❌ BOT_TOKEN не найден в переменных окружения!")
         print("💡 Проверьте файл env.local")
+        print(f"💡 Путь к файлу: {os.path.join(os.path.dirname(__file__), 'env.local')}")
         return False
     else:
         print(f"✅ BOT_TOKEN найден: {bot_token[:10]}...")
@@ -90,6 +111,7 @@ from services.ai_service import AIService, ReceiptAnalysisServiceCompat, AIServi
 from handlers.message_handlers import MessageHandlers
 from handlers.callback_handlers import CallbackHandlers
 from handlers.document_handler import DocumentHandler
+from handlers.dashboard_handler import create_dashboard_conversation_handler
 from utils.message_sender import MessageSender
 # Google Sheets handler removed for template
 
@@ -170,6 +192,9 @@ def main() -> None:
     callback_handlers = CallbackHandlers(config, analysis_service)
     document_handlers = DocumentHandler(config, analysis_service)
     
+    # Create dashboard conversation handler
+    dashboard_conv_handler = create_dashboard_conversation_handler(config)
+    
     # Initialize message sender for centralized message sending
     # Example usage:
     # message_sender = MessageSender(config)
@@ -213,6 +238,7 @@ def main() -> None:
 
     # Add handlers
     application.add_handler(conv_handler)
+    application.add_handler(dashboard_conv_handler)
     
     # Role initialization removed for template
 

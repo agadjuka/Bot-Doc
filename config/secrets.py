@@ -24,6 +24,35 @@ class SecretsConfig:
         """Перечитывает токены из переменных окружения"""
         self.BOT_TOKEN = os.getenv("BOT_TOKEN", "")
         self.PROJECT_ID = os.getenv("PROJECT_ID", "")
+        
+        # Если токен не найден в переменных окружения, пробуем загрузить из файла
+        if not self.BOT_TOKEN:
+            try:
+                env_file_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "env.local")
+                if os.path.exists(env_file_path):
+                    with open(env_file_path, 'r', encoding='utf-8') as f:
+                        for line in f:
+                            if line.strip().startswith('BOT_TOKEN='):
+                                self.BOT_TOKEN = line.strip().split('=', 1)[1]
+                                os.environ["BOT_TOKEN"] = self.BOT_TOKEN
+                                print(f"✅ BOT_TOKEN загружен из файла в SecretsConfig: {self.BOT_TOKEN[:10]}...")
+                                break
+            except Exception as e:
+                print(f"❌ Ошибка при чтении BOT_TOKEN из файла: {e}")
+        
+        if not self.PROJECT_ID:
+            try:
+                env_file_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "env.local")
+                if os.path.exists(env_file_path):
+                    with open(env_file_path, 'r', encoding='utf-8') as f:
+                        for line in f:
+                            if line.strip().startswith('PROJECT_ID='):
+                                self.PROJECT_ID = line.strip().split('=', 1)[1]
+                                os.environ["PROJECT_ID"] = self.PROJECT_ID
+                                print(f"✅ PROJECT_ID загружен из файла в SecretsConfig: {self.PROJECT_ID}")
+                                break
+            except Exception as e:
+                print(f"❌ Ошибка при чтении PROJECT_ID из файла: {e}")
     
     def _get_env_var(self, env_name: str, default_value: str) -> str:
         """

@@ -66,15 +66,8 @@ class AIService:
     async def get_ai_response(self, user_text: str, language: str = "en") -> str:
         """Get AI response for user text"""
         try:
-            # Create a simple prompt for basic conversation
-            prompt = f"""
-You are a helpful AI assistant. Respond to the user's message in a friendly and helpful way.
-
-User message: {user_text}
-Language: {language}
-
-Please respond in {language} language.
-"""
+            # Get prompt from PromptManager
+            prompt = self.prompt_manager.get_ai_response_prompt(user_text, language)
             
             # Generate response with timeout
             response = await asyncio.wait_for(

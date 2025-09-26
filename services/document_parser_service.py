@@ -8,6 +8,8 @@ from typing import Dict, Any, Optional
 import google.generativeai as genai
 from google.oauth2 import service_account
 
+from config.prompts import PromptManager
+
 
 class DocumentParserService:
     """Service for parsing company information from text using Gemini AI"""
@@ -19,6 +21,8 @@ class DocumentParserService:
         Args:
             gemini_api_key: Deprecated parameter, now uses Google Cloud authentication
         """
+        self.prompt_manager = PromptManager()
+        
         # Get credentials file path
         credentials_path = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
         if not credentials_path:
@@ -60,18 +64,9 @@ class DocumentParserService:
             Dictionary with extracted company information
         """
         try:
-            # Create the prompt for Gemini
+            # Create the prompt for Gemini using PromptManager
             fields_list = ", ".join(self.required_fields)
-            prompt = f"""
-Проанализируй текст с реквизитами компании. Извлеки следующие поля: {fields_list}.
-
-Имена ключей в JSON должны быть ТОЧНО ТАКИМИ ЖЕ, как в списке выше. Если поле не найдено, используй null.
-
-Текст для анализа:
-{text}
-
-Верни только валидный JSON без дополнительных комментариев или объяснений.
-"""
+            prompt = self.prompt_manager.get_company_info_extraction_prompt(fields_list, text)
             
             # Generate response using Gemini
             response = await asyncio.get_event_loop().run_in_executor(

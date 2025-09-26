@@ -16,6 +16,8 @@ from docx import Document
 from docx.shared import RGBColor
 import docx2txt
 
+from config.prompts import PromptManager
+
 logger = logging.getLogger(__name__)
 
 
@@ -29,6 +31,7 @@ class TemplateProcessorService:
         """
         Initialize the TemplateProcessorService using Google Cloud authentication.
         """
+        self.prompt_manager = PromptManager()
         self._initialize_gemini()
         logger.info("TemplateProcessorService initialized successfully")
     
@@ -108,10 +111,12 @@ class TemplateProcessorService:
             print(f"✅ [ANALYZE] Получен ответ от Gemini: {len(response)} символов")
             
             # Step 3: Parse JSON response
+            print(f"🔍 [ANALYZE] Начинаю парсинг ответа Gemini...")
             replacements = self._parse_gemini_response(response)
             
             if not replacements:
                 print(f"❌ [ANALYZE] Не удалось распарсить ответ Gemini")
+                print(f"❌ [ANALYZE] Ответ Gemini: {response[:300]}...")
                 return b'', b''
             
             print(f"✅ [ANALYZE] Найдено {len(replacements)} полей для замены")
@@ -141,7 +146,12 @@ class TemplateProcessorService:
             
         except Exception as e:
             print(f"❌ [ANALYZE] Ошибка при анализе документа: {e}")
+            print(f"❌ [ANALYZE] Тип ошибки: {type(e).__name__}")
+            import traceback
+            print(f"❌ [ANALYZE] Полный traceback:")
+            traceback.print_exc()
             logger.error(f"Error in document analysis: {e}")
+            logger.error(f"Full traceback: {traceback.format_exc()}")
             return b'', b''
     
     def _extract_text_from_docx(self, file_bytes: bytes) -> str:
@@ -220,28 +230,9 @@ class TemplateProcessorService:
         Returns:
             Formatted prompt for Gemini
         """
-        prompt = f"""ШАГ 1: Определи, какую сторону договора мы заполняем. Определи это по тому, у какой стороны пропущены практически все поля (выделены желтым маркером или подчеркиванием). ТОЛЬКО эту сторону мы редактируем.
-
-ШАГ 2: В реквизиты и имя директора ДРУГОЙ стороны ЗАПРЕЩЕНО вносить какие-то изменения, эту сторону нужно ИГНОРИРОВАТЬ.
-
-ШАГ 3: Обращай внимание ТОЛЬКО на поля, которые выделены желтым маркером или подчеркиванием. Это считается пропуском или пустым местом. Именно с этими местами ты должен работать. Ничего другого не трогай.
-
-ШАГ 4: ВАЖНО! Различай два типа полей:
-- В ШАПКЕ договора (где перечисляются стороны) - нужно писать только НАИМЕНОВАНИЕ контрагента, НЕ реквизиты
-- В ТАБЛИЦЕ реквизитов - нужно писать полные реквизиты
-
-{document_text}
-
-Найди в заполняемой стороне:
-1. В шапке договора: место для НАИМЕНОВАНИЯ контрагента (НЕ реквизиты!) - только поля с желтым маркером или подчеркиванием
-2. В таблице реквизитов: ВСЮ пустую таблицу реквизитов - только поля с желтым маркером или подчеркиванием  
-3. Место для имени директора внизу документа - только поля с желтым маркером или подчеркиванием
-
-Верни JSON:
-[{{"original_text": "место для наименования контрагента в шапке", "type": "PARTY_2_NAME"}}, {{"original_text": "вся таблица реквизитов заполняемой стороны", "type": "PARTY_2_REQUISITES"}}, {{"original_text": "место для имени директора заполняемой стороны", "type": "PARTY_2_DIRECTOR_NAME"}}]
-
-ТОЛЬКО JSON без текста."""
-        
+        prompt = self.prompt_manager.get_document_analysis_prompt(document_text)
+        print(f"🔍 [PROMPT] Создан промпт длиной {len(prompt)} символов")
+        print(f"🔍 [PROMPT] Первые 200 символов промпта: {prompt[:200]}")
         return prompt
     
     async def _send_gemini_request(self, prompt: str) -> str:
@@ -261,6 +252,7 @@ class TemplateProcessorService:
             
             if response.text:
                 print(f"✅ [GEMINI] Получен ответ от Gemini: {len(response.text)} символов")
+                print(f"🔍 [GEMINI] Первые 200 символов ответа: {response.text[:200]}")
                 logger.info("Received response from Gemini")
                 return response.text
             else:
@@ -468,6 +460,7 @@ class TemplateProcessorService:
         try:
             print(f"🔍 [PARSE] Начинаю парсинг ответа от Gemini...")
             print(f"🔍 [PARSE] Длина ответа: {len(response)} символов")
+            print(f"🔍 [PARSE] Первые 200 символов ответа: {response[:200]}")
             
             # Clean the response (remove markdown formatting if present)
             cleaned_response = response.strip()
@@ -485,26 +478,60 @@ class TemplateProcessorService:
             
             print(f"🔍 [PARSE] Очищенный ответ: {cleaned_response[:100]}...")
             
-            # Try to find JSON array in the response
+            # Try multiple parsing strategies
+            field_data = None
+            
+            # Strategy 1: Try to find JSON array in the response
             json_start = cleaned_response.find('[')
             json_end = cleaned_response.rfind(']') + 1
             
-            print(f"🔍 [PARSE] Найден JSON массив: позиция {json_start} - {json_end}")
-            
             if json_start != -1 and json_end > json_start:
                 json_text = cleaned_response[json_start:json_end]
-                field_data = json.loads(json_text)
-            else:
-                # If no array found, try to parse the whole response
-                field_data = json.loads(cleaned_response)
+                print(f"🔍 [PARSE] Найден JSON массив: позиция {json_start} - {json_end}")
+                print(f"🔍 [PARSE] JSON текст: {json_text[:200]}...")
+                try:
+                    field_data = json.loads(json_text)
+                    print(f"✅ [PARSE] Успешно распарсен JSON массив")
+                except json.JSONDecodeError as e:
+                    print(f"❌ [PARSE] Ошибка парсинга JSON массива: {e}")
+                    field_data = None
+            
+            # Strategy 2: Try to parse the whole response
+            if field_data is None:
+                try:
+                    field_data = json.loads(cleaned_response)
+                    print(f"✅ [PARSE] Успешно распарсен весь ответ")
+                except json.JSONDecodeError as e:
+                    print(f"❌ [PARSE] Ошибка парсинга всего ответа: {e}")
+                    field_data = None
+            
+            # Strategy 3: Try to extract JSON using regex
+            if field_data is None:
+                json_pattern = r'\[.*?\]'
+                json_matches = re.findall(json_pattern, cleaned_response, re.DOTALL)
+                if json_matches:
+                    for json_match in json_matches:
+                        try:
+                            field_data = json.loads(json_match)
+                            print(f"✅ [PARSE] Успешно распарсен JSON через regex")
+                            break
+                        except json.JSONDecodeError:
+                            continue
+            
+            if field_data is None:
+                print(f"❌ [PARSE] Не удалось распарсить JSON из ответа")
+                logger.error("Could not parse JSON from Gemini response")
+                return []
 
             if not isinstance(field_data, list):
                 logger.error("Gemini response is not a list")
+                print(f"❌ [PARSE] Ответ не является массивом: {type(field_data)}")
                 return []
 
             # Validate that each item has required fields
             valid_fields = []
-            for item in field_data:
+            for i, item in enumerate(field_data):
+                print(f"🔍 [PARSE] Проверяю элемент {i}: {item}")
                 if isinstance(item, dict) and 'original_text' in item and 'type' in item:
                     if item['type'] in ['PARTY_2_NAME', 'PARTY_2_REQUISITES', 'PARTY_2_DIRECTOR_NAME']:
                         valid_fields.append(item)
@@ -521,8 +548,9 @@ class TemplateProcessorService:
             logger.error(f"Error parsing JSON response from Gemini: {e}")
             logger.error(f"Raw response: {response}")
             print(f"❌ [PARSE] Ошибка парсинга JSON: {e}")
-            print(f"❌ [PARSE] Исходный ответ: {response[:200]}...")
+            print(f"❌ [PARSE] Исходный ответ: {response[:500]}...")
             return []
         except Exception as e:
             logger.error(f"Unexpected error parsing Gemini response: {e}")
+            print(f"❌ [PARSE] Неожиданная ошибка: {e}")
             return []

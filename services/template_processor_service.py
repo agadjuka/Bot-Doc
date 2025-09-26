@@ -212,7 +212,7 @@ class TemplateProcessorService:
     
     def _create_simple_prompt(self, document_text: str) -> str:
         """
-        Create simple prompt for Gemini to analyze the document.
+        Create comprehensive prompt for Gemini to analyze the document.
         
         Args:
             document_text: Text content of the document
@@ -220,20 +220,20 @@ class TemplateProcessorService:
         Returns:
             Formatted prompt for Gemini
         """
-        prompt = f"""Ты ассистент по документам. Вот текст договора: {document_text}
+        prompt = f"""Найди ТОЛЬКО пустые места для ЗАКАЗЧИКА (правая сторона). НЕ ТРОГАЙ ИСПОЛНИТЕЛЬ (левая сторона).
 
-Найди два фрагмента текста:
-1) место, где должно быть наименование контрагента (второй, незаполненной стороны)
-2) место, где должен быть блок реквизитов этого контрагента
+ВАЖНО: Обращай внимание ТОЛЬКО на поля, которые выделены желтым маркером или подчеркиванием. Это считается пропуском или пустым местом. Именно с этими местами ты должен работать. Ничего другого не трогай.
 
-Верни JSON-массив с двумя объектами:
-[{{"original_text": "...", "type": "NAME"}}, {{"original_text": "...", "type": "REQUISITES"}}]
+{document_text}
 
-Где:
-- original_text - точный текст из документа, который нужно заменить
-- type - либо "NAME" для наименования контрагента, либо "REQUISITES" для реквизитов
+Найди:
+1. ВСЮ пустую таблицу реквизитов ЗАКАЗЧИКА (правая сторона) - только поля с желтым маркером или подчеркиванием
+2. Место для имени директора ЗАКАЗЧИКА внизу документа - только поля с желтым маркером или подчеркиванием
 
-Если не можешь найти одно из полей, верни пустой массив []."""
+Верни JSON:
+[{{"original_text": "вся таблица реквизитов ЗАКАЗЧИКА", "type": "PARTY_2_REQUISITES"}}, {{"original_text": "место для имени директора", "type": "PARTY_2_DIRECTOR_NAME"}}]
+
+ТОЛЬКО JSON без текста."""
         
         return prompt
     
@@ -292,10 +292,13 @@ class TemplateProcessorService:
                 original_text = replacement['original_text']
                 field_type = replacement['type']
                 
-                if field_type == 'NAME':
-                    preview_replacements[original_text] = '[Наименование Контрагента]'
-                elif field_type == 'REQUISITES':
-                    preview_replacements[original_text] = '[Реквизиты Контрагента]'
+                if field_type == 'PARTY_2_REQUISITES':
+                    # Для реквизитов в файле предпросмотра заменяем только первую строку
+                    lines = original_text.split('\n')
+                    if lines:
+                        preview_replacements[lines[0]] = '[Реквизиты Контрагента]'
+                elif field_type == 'PARTY_2_DIRECTOR_NAME':
+                    preview_replacements[original_text] = '[Имя Директора]'
             
             print(f"✅ [PREVIEW] Создано {len(preview_replacements)} замен для предпросмотра")
             
@@ -342,10 +345,11 @@ class TemplateProcessorService:
                 original_text = replacement['original_text']
                 field_type = replacement['type']
                 
-                if field_type == 'NAME':
-                    smart_replacements[original_text] = '{{PARTY_2_NAME}}'
-                elif field_type == 'REQUISITES':
+                if field_type == 'PARTY_2_REQUISITES':
+                    # Для реквизитов в умном шаблоне заменяем всю таблицу
                     smart_replacements[original_text] = '{{PARTY_2_REQUISITES}}'
+                elif field_type == 'PARTY_2_DIRECTOR_NAME':
+                    smart_replacements[original_text] = '{{PARTY_2_DIRECTOR_NAME}}'
             
             print(f"✅ [SMART] Создано {len(smart_replacements)} замен для умного шаблона")
             
@@ -451,16 +455,37 @@ class TemplateProcessorService:
             List of field data dictionaries
         """
         try:
+            print(f"🔍 [PARSE] Начинаю парсинг ответа от Gemini...")
+            print(f"🔍 [PARSE] Длина ответа: {len(response)} символов")
+            
             # Clean the response (remove markdown formatting if present)
             cleaned_response = response.strip()
+            
+            # Remove markdown code blocks
             if cleaned_response.startswith('```json'):
                 cleaned_response = cleaned_response[7:]
+            elif cleaned_response.startswith('```'):
+                cleaned_response = cleaned_response[3:]
+            
             if cleaned_response.endswith('```'):
                 cleaned_response = cleaned_response[:-3]
+            
             cleaned_response = cleaned_response.strip()
-
-            # Parse JSON
-            field_data = json.loads(cleaned_response)
+            
+            print(f"🔍 [PARSE] Очищенный ответ: {cleaned_response[:100]}...")
+            
+            # Try to find JSON array in the response
+            json_start = cleaned_response.find('[')
+            json_end = cleaned_response.rfind(']') + 1
+            
+            print(f"🔍 [PARSE] Найден JSON массив: позиция {json_start} - {json_end}")
+            
+            if json_start != -1 and json_end > json_start:
+                json_text = cleaned_response[json_start:json_end]
+                field_data = json.loads(json_text)
+            else:
+                # If no array found, try to parse the whole response
+                field_data = json.loads(cleaned_response)
 
             if not isinstance(field_data, list):
                 logger.error("Gemini response is not a list")
@@ -470,7 +495,7 @@ class TemplateProcessorService:
             valid_fields = []
             for item in field_data:
                 if isinstance(item, dict) and 'original_text' in item and 'type' in item:
-                    if item['type'] in ['NAME', 'REQUISITES']:
+                    if item['type'] in ['PARTY_2_REQUISITES', 'PARTY_2_DIRECTOR_NAME']:
                         valid_fields.append(item)
                         print(f"✅ [PARSE] Найдено поле: {item['type']} -> '{item['original_text'][:50]}...'")
                     else:
@@ -484,6 +509,8 @@ class TemplateProcessorService:
         except json.JSONDecodeError as e:
             logger.error(f"Error parsing JSON response from Gemini: {e}")
             logger.error(f"Raw response: {response}")
+            print(f"❌ [PARSE] Ошибка парсинга JSON: {e}")
+            print(f"❌ [PARSE] Исходный ответ: {response[:200]}...")
             return []
         except Exception as e:
             logger.error(f"Unexpected error parsing Gemini response: {e}")

@@ -226,16 +226,19 @@ class TemplateProcessorService:
 
 ШАГ 3: Обращай внимание ТОЛЬКО на поля, которые выделены желтым маркером или подчеркиванием. Это считается пропуском или пустым местом. Именно с этими местами ты должен работать. Ничего другого не трогай.
 
-ШАГ 4: Наверху, там где шапка договора, мы должны писать не реквизиты контрагентов, а НАИМЕНОВАНИЕ контрагента.
+ШАГ 4: ВАЖНО! Различай два типа полей:
+- В ШАПКЕ договора (где перечисляются стороны) - нужно писать только НАИМЕНОВАНИЕ контрагента, НЕ реквизиты
+- В ТАБЛИЦЕ реквизитов - нужно писать полные реквизиты
 
 {document_text}
 
 Найди в заполняемой стороне:
-1. ВСЮ пустую таблицу реквизитов - только поля с желтым маркером или подчеркиванием
-2. Место для имени директора внизу документа - только поля с желтым маркером или подчеркиванием
+1. В шапке договора: место для НАИМЕНОВАНИЯ контрагента (НЕ реквизиты!) - только поля с желтым маркером или подчеркиванием
+2. В таблице реквизитов: ВСЮ пустую таблицу реквизитов - только поля с желтым маркером или подчеркиванием  
+3. Место для имени директора внизу документа - только поля с желтым маркером или подчеркиванием
 
 Верни JSON:
-[{{"original_text": "вся таблица реквизитов заполняемой стороны", "type": "PARTY_2_REQUISITES"}}, {{"original_text": "место для имени директора заполняемой стороны", "type": "PARTY_2_DIRECTOR_NAME"}}]
+[{{"original_text": "место для наименования контрагента в шапке", "type": "PARTY_2_NAME"}}, {{"original_text": "вся таблица реквизитов заполняемой стороны", "type": "PARTY_2_REQUISITES"}}, {{"original_text": "место для имени директора заполняемой стороны", "type": "PARTY_2_DIRECTOR_NAME"}}]
 
 ТОЛЬКО JSON без текста."""
         
@@ -296,7 +299,9 @@ class TemplateProcessorService:
                 original_text = replacement['original_text']
                 field_type = replacement['type']
                 
-                if field_type == 'PARTY_2_REQUISITES':
+                if field_type == 'PARTY_2_NAME':
+                    preview_replacements[original_text] = '[Наименование Контрагента]'
+                elif field_type == 'PARTY_2_REQUISITES':
                     # Для реквизитов в файле предпросмотра заменяем только первую строку
                     lines = original_text.split('\n')
                     if lines:
@@ -349,7 +354,9 @@ class TemplateProcessorService:
                 original_text = replacement['original_text']
                 field_type = replacement['type']
                 
-                if field_type == 'PARTY_2_REQUISITES':
+                if field_type == 'PARTY_2_NAME':
+                    smart_replacements[original_text] = '{{PARTY_2_NAME}}'
+                elif field_type == 'PARTY_2_REQUISITES':
                     # Для реквизитов в умном шаблоне заменяем всю таблицу
                     smart_replacements[original_text] = '{{PARTY_2_REQUISITES}}'
                 elif field_type == 'PARTY_2_DIRECTOR_NAME':
@@ -499,7 +506,7 @@ class TemplateProcessorService:
             valid_fields = []
             for item in field_data:
                 if isinstance(item, dict) and 'original_text' in item and 'type' in item:
-                    if item['type'] in ['PARTY_2_REQUISITES', 'PARTY_2_DIRECTOR_NAME']:
+                    if item['type'] in ['PARTY_2_NAME', 'PARTY_2_REQUISITES', 'PARTY_2_DIRECTOR_NAME']:
                         valid_fields.append(item)
                         print(f"✅ [PARSE] Найдено поле: {item['type']} -> '{item['original_text'][:50]}...'")
                     else:

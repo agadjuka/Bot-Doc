@@ -255,11 +255,8 @@ def create_application() -> Application:
                 MessageHandler(filters.Document.ALL, template_handler.handle_template_upload),
                 CommandHandler("cancel", template_handler.cancel_template_upload)
             ],
-            config.AWAITING_TEMPLATE_CONFIRMATION: [
-                CallbackQueryHandler(template_handler.handle_template_confirmation, pattern="^(confirm_template|cancel_template)$")
-            ],
             config.AWAITING_TEMPLATE_NAME: [
-                MessageHandler(filters.TEXT & ~filters.COMMAND, template_handler.handle_template_name),
+                MessageHandler(filters.TEXT & ~filters.COMMAND, template_handler.handle_template_name_and_save),
                 CommandHandler("cancel", template_handler.cancel_template_upload)
             ]
         },

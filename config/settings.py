@@ -51,8 +51,7 @@ class BotConfig:
         
         # Template management states
         self.AWAITING_TEMPLATE_UPLOAD = 3
-        self.AWAITING_TEMPLATE_CONFIRMATION = 4
-        self.AWAITING_TEMPLATE_NAME = 5
+        self.AWAITING_TEMPLATE_NAME = 4
         
         # Message settings
         self.MAX_MESSAGE_LENGTH = 4096

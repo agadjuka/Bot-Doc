@@ -101,7 +101,7 @@ class TemplateManagementHandler:
     
     async def handle_template_upload(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         """
-        Handle template file upload and analysis
+        Handle template file upload and analysis with new two-file strategy
         
         Args:
             update: Telegram update
@@ -133,8 +133,7 @@ class TemplateManagementHandler:
             
             # Send analysis message
             analysis_msg = await update.message.reply_text(
-                "⏳ **Анализирую ваш шаблон...**\n\n"
-                "Это может занять до минуты.",
+                "⏳ Анализирую шаблон...",
                 parse_mode='Markdown'
             )
             
@@ -146,113 +145,56 @@ class TemplateManagementHandler:
             print(f"✅ [TEMPLATE] Файл скачан успешно: {len(file_bytes)} байт")
             
             print(f"🤖 [TEMPLATE] Отправляю файл в Gemini для анализа...")
-            # Analyze document
-            replacements, field_names, analysis_result = await self.template_processor.analyze_document(file_bytes, file_format)
-            print(f"✅ [TEMPLATE] Gemini анализ завершен. Найдено полей: {len(field_names)}")
+            # Analyze document using new two-file method
+            preview_bytes, smart_template_bytes = await self.template_processor.analyze_and_prepare_templates(file_bytes, file_format)
+            print(f"✅ [TEMPLATE] Анализ завершен")
             
-            if not field_names:
-                print(f"❌ [TEMPLATE] Анализ не удался - поля не найдены")
+            if not preview_bytes or not smart_template_bytes:
+                print(f"❌ [TEMPLATE] Анализ не удался")
                 await analysis_msg.edit_text(
                     "❌ **Анализ не удался**\n\n"
-                    "Не удалось найти поля для заполнения в документе. "
+                    "Не удалось проанализировать документ. "
                     "Убедитесь, что в документе есть места для вставки данных.",
                     parse_mode='Markdown'
                 )
                 return self.config.AWAITING_TEMPLATE_UPLOAD
             
-            print(f"🔧 [TEMPLATE] Создаю умный шаблон с {len(replacements)} заменами...")
-            # Create smart template
-            smart_template_bytes = self.template_processor.create_smart_template(file_bytes, replacements)
-            print(f"✅ [TEMPLATE] Умный шаблон создан: {len(smart_template_bytes)} байт")
+            print(f"✅ [TEMPLATE] Созданы файлы:")
+            print(f"   - Предпросмотр: {len(preview_bytes)} байт")
+            print(f"   - Умный шаблон: {len(smart_template_bytes)} байт")
             
-            print(f"🎨 [TEMPLATE] Создаю preview документ с выделенными полями...")
-            # Create preview document with highlighted fields
-            preview_document_bytes = self.template_processor.create_preview_document(file_bytes, analysis_result)
-            print(f"✅ [TEMPLATE] Preview документ создан: {len(preview_document_bytes)} байт")
-            
-            # Store data in context for later use
+            # Store both files in FSM storage
+            context.user_data['preview_bytes'] = preview_bytes
             context.user_data['smart_template_bytes'] = smart_template_bytes
-            context.user_data['preview_document_bytes'] = preview_document_bytes
-            context.user_data['field_names'] = field_names
             context.user_data['original_file_name'] = document.file_name
             
-            keyboard = [
-                [
-                    InlineKeyboardButton("✅ Да, сохранить", callback_data="confirm_template"),
-                    InlineKeyboardButton("❌ Отмена", callback_data="cancel_template")
-                ]
-            ]
-            reply_markup = InlineKeyboardMarkup(keyboard)
-            
-            print(f"📋 [TEMPLATE] Отправляю preview документ пользователю...")
-            # Send preview document to user
-            await analysis_msg.edit_text(
-                "✅ **Анализ завершен!**\n\n"
-                "Я подготовил предпросмотр. Пожалуйста, откройте файл и убедитесь, что я правильно определил все поля для заполнения (они выделены цветом).\n\n"
-                "Если всё верно, нажмите 'Да, сохранить'.",
-                parse_mode='Markdown'
-            )
-            
-            # Send the preview document as a file
+            # Send the preview file as a document immediately
+            print(f"📄 [TEMPLATE] Отправляю файл предпросмотра пользователю...")
             from io import BytesIO
-            preview_file = BytesIO(preview_document_bytes)
+            preview_file = BytesIO(preview_bytes)
             preview_file.name = f"preview_{document.file_name}"
+            
+            await analysis_msg.edit_text(
+                "✅ Готово! Я подготовил предпросмотр. Пожалуйста, откройте файл и убедитесь, что я правильно определил поля для заполнения (они выделены красным).\n\n"
+                "Если всё верно, придумайте и отправьте мне имя для этого шаблона, чтобы сохранить его. Для отмены просто отправьте новый файл."
+            )
             
             await update.message.reply_document(
                 document=preview_file,
-                caption="📄 **Предпросмотр шаблона**\n\nПоля для заполнения выделены желтым цветом.",
-                reply_markup=reply_markup,
-                parse_mode='Markdown'
+                caption="📄 Файл предпросмотра готов"
             )
             
-            return self.config.AWAITING_TEMPLATE_CONFIRMATION
+            return self.config.AWAITING_TEMPLATE_NAME
             
         except Exception as e:
             print(f"❌ [TEMPLATE] Ошибка при обработке шаблона: {e}")
             logger.error(f"Error in handle_template_upload: {e}")
-            await update.message.reply_text("❌ Произошла ошибка при анализе шаблона.")
+            await update.message.reply_text("❌ Произошла ошибка при обработке файла.")
             return ConversationHandler.END
     
-    async def handle_template_confirmation(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    async def handle_template_name_and_save(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         """
-        Handle template confirmation
-        
-        Args:
-            update: Telegram update
-            context: Bot context
-            
-        Returns:
-            Conversation state
-        """
-        try:
-            query = update.callback_query
-            await query.answer()
-            
-            if query.data == "cancel_template":
-                await query.edit_message_text(
-                    "❌ **Загрузка отменена**\n\n"
-                    "Шаблон не был сохранен.",
-                    parse_mode='Markdown'
-                )
-                return ConversationHandler.END
-            
-            elif query.data == "confirm_template":
-                await query.edit_message_text(
-                    "📝 **Отлично!**\n\n"
-                    "Теперь придумайте короткое имя для этого шаблона "
-                    "(например, 'Договор на услуги').",
-                    parse_mode='Markdown'
-                )
-                return self.config.AWAITING_TEMPLATE_NAME
-            
-        except Exception as e:
-            logger.error(f"Error in handle_template_confirmation: {e}")
-            await update.callback_query.edit_message_text("❌ Произошла ошибка при подтверждении шаблона.")
-            return ConversationHandler.END
-    
-    async def handle_template_name(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-        """
-        Handle template name input and save template
+        Handle template name input and save smart template
         
         Args:
             update: Telegram update
@@ -276,12 +218,11 @@ class TemplateManagementHandler:
                 )
                 return self.config.AWAITING_TEMPLATE_NAME
             
-            # Get stored data
+            # Get stored smart template data
             smart_template_bytes = context.user_data.get('smart_template_bytes')
-            field_names = context.user_data.get('field_names')
             
-            if not smart_template_bytes or not field_names:
-                print(f"❌ [TEMPLATE] Данные шаблона потеряны для пользователя {user_id}")
+            if not smart_template_bytes:
+                print(f"❌ [TEMPLATE] Данные умного шаблона потеряны для пользователя {user_id}")
                 await update.message.reply_text(
                     "❌ **Ошибка данных**\n\n"
                     "Данные шаблона были потеряны. Пожалуйста, начните загрузку заново.",
@@ -294,8 +235,8 @@ class TemplateManagementHandler:
             destination_path = f"user_{user_id}/{template_name}{original_format}"
             print(f"📁 [TEMPLATE] Путь для сохранения: {destination_path}")
             
-            print(f"☁️ [TEMPLATE] Загружаю файл в Cloud Storage...")
-            # Upload to storage
+            print(f"☁️ [TEMPLATE] Загружаю умный шаблон в Cloud Storage...")
+            # Upload smart template to storage
             upload_success = await self.storage_service.upload_file(
                 smart_template_bytes,
                 destination_path
@@ -310,7 +251,7 @@ class TemplateManagementHandler:
                 )
                 return ConversationHandler.END
             
-            print(f"✅ [TEMPLATE] Файл успешно загружен в Cloud Storage")
+            print(f"✅ [TEMPLATE] Умный шаблон успешно загружен в Cloud Storage")
             
             # Save to Firestore
             if self.firestore_service:
@@ -331,9 +272,8 @@ class TemplateManagementHandler:
                 print(f"⚠️ [TEMPLATE] Firestore сервис недоступен")
             
             # Clean up user data
+            context.user_data.pop('preview_bytes', None)
             context.user_data.pop('smart_template_bytes', None)
-            context.user_data.pop('preview_document_bytes', None)
-            context.user_data.pop('field_names', None)
             context.user_data.pop('original_file_name', None)
             print(f"🧹 [TEMPLATE] Очищены данные пользователя {user_id}")
             
@@ -348,7 +288,7 @@ class TemplateManagementHandler:
             
         except Exception as e:
             print(f"❌ [TEMPLATE] Ошибка при сохранении шаблона: {e}")
-            logger.error(f"Error in handle_template_name: {e}")
+            logger.error(f"Error in handle_template_name_and_save: {e}")
             await update.message.reply_text("❌ Произошла ошибка при сохранении шаблона.")
             return ConversationHandler.END
     
@@ -365,9 +305,8 @@ class TemplateManagementHandler:
         """
         try:
             # Clean up user data
+            context.user_data.pop('preview_bytes', None)
             context.user_data.pop('smart_template_bytes', None)
-            context.user_data.pop('preview_document_bytes', None)
-            context.user_data.pop('field_names', None)
             context.user_data.pop('original_file_name', None)
             
             await update.message.reply_text(

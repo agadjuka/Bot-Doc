@@ -76,10 +76,13 @@ Language: {language}
 Please respond in {language} language.
 """
             
-            # Generate response
-            response = await asyncio.get_event_loop().run_in_executor(
-                None, 
-                lambda: self._model.generate_content(prompt)
+            # Generate response with timeout
+            response = await asyncio.wait_for(
+                asyncio.get_event_loop().run_in_executor(
+                    None, 
+                    lambda: self._model.generate_content(prompt)
+                ),
+                timeout=30.0  # 30 seconds timeout
             )
             
             return response.text.strip()

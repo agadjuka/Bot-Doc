@@ -67,7 +67,7 @@ class TemplateProcessorService:
             logger.error(f"Failed to initialize Gemini AI service: {e}")
             raise
     
-    async def analyze_and_prepare_templates(self, file_bytes: bytes, file_format: str = '.docx') -> Tuple[bytes, bytes]:
+    async def analyze_and_prepare_templates(self, file_bytes: bytes, file_format: str = '.docx', debug_callback=None) -> Tuple[bytes, bytes]:
         """
         Analyze document and prepare two files: preview for user and smart template for storage.
         
@@ -104,7 +104,7 @@ class TemplateProcessorService:
             
             print(f"🤖 [ANALYZE] Отправляю запрос в Gemini...")
             logger.info("Sending document analysis request to Gemini...")
-            response = await self._send_gemini_request(prompt)
+            response = await self._send_gemini_request(prompt, debug_callback)
             
             if not response:
                 print(f"❌ [ANALYZE] Пустой ответ от Gemini")
@@ -245,7 +245,7 @@ class TemplateProcessorService:
         print(f"🔍 [PROMPT] Первые 200 символов промпта: {prompt[:200]}")
         return prompt
     
-    async def _send_gemini_request(self, prompt: str) -> str:
+    async def _send_gemini_request(self, prompt: str, debug_callback=None) -> str:
         """
         Send request to Gemini API.
         
@@ -257,6 +257,14 @@ class TemplateProcessorService:
         """
         try:
             print(f"🚀 [GEMINI] Отправляю запрос в Gemini API...")
+            
+            # Debug: Send prompt to chat if debug_callback is provided
+            if debug_callback:
+                try:
+                    await debug_callback(prompt)
+                except Exception as e:
+                    print(f"⚠️ [DEBUG] Ошибка при отправке промпта в чат: {e}")
+            
             # Generate content using Gemini
             response = self.model.generate_content(prompt)
             

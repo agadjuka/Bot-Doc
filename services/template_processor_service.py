@@ -106,7 +106,7 @@ class TemplateProcessorService:
             logger.error(f"Error analyzing text: {e}")
             return {}, []
 
-    async def analyze_document(self, file_bytes: bytes, file_format: str = '.docx') -> Tuple[Dict[str, str], List[str]]:
+    async def analyze_document(self, file_bytes: bytes, file_format: str = '.docx') -> Tuple[Dict[str, str], List[str], List[Dict[str, str]]]:
         """
         Analyze a document and identify fields that need to be filled with company data.
         
@@ -118,6 +118,7 @@ class TemplateProcessorService:
             Tuple containing:
             - replacements: Dictionary mapping original text to text with placeholders
             - field_names: List of human-readable field names in Russian
+            - analysis_result: Full analysis result from Gemini for preview document creation
         """
         try:
             print(f"📄 [GEMINI] Начинаю анализ документа размером {len(file_bytes)} байт")
@@ -131,12 +132,12 @@ class TemplateProcessorService:
                 document_text = self._extract_text_from_doc(file_bytes)
             else:
                 print(f"❌ [GEMINI] Неподдерживаемый формат файла: {file_format}")
-                return {}, []
+                return {}, [], []
             
             if not document_text.strip():
                 print(f"⚠️ [GEMINI] Документ пустой или не удалось прочитать")
                 logger.warning("Document appears to be empty or could not be read")
-                return {}, []
+                return {}, [], []
             
             print(f"✅ [GEMINI] Извлечено {len(document_text)} символов текста")
             
@@ -149,7 +150,7 @@ class TemplateProcessorService:
             
             if not response:
                 print(f"❌ [GEMINI] Пустой ответ от Gemini")
-                return {}, []
+                return {}, [], []
             
             print(f"✅ [GEMINI] Получен ответ от Gemini: {len(response)} символов")
             
@@ -173,12 +174,12 @@ class TemplateProcessorService:
             
             print(f"✅ [GEMINI] Анализ завершен. Найдено {len(field_data)} полей: {field_names}")
             logger.info(f"Document analysis completed. Found {len(field_data)} fields")
-            return replacements, field_names
+            return replacements, field_names, field_data
             
         except Exception as e:
             print(f"❌ [GEMINI] Ошибка при анализе документа: {e}")
             logger.error(f"Error analyzing document: {e}")
-            return {}, []
+            return {}, [], []
     
     def _extract_text_from_docx(self, file_bytes: bytes) -> str:
         """
@@ -401,6 +402,107 @@ class TemplateProcessorService:
             logger.error(f"Error creating smart template: {e}")
             raise
     
+    def create_preview_document(self, file_bytes: bytes, analysis_result: list) -> bytes:
+        """
+        Create a preview document with highlighted fields for user confirmation.
+        
+        Args:
+            file_bytes: Original document content as bytes
+            analysis_result: List of field data from Gemini analysis
+            
+        Returns:
+            Preview document as bytes with highlighted fields
+        """
+        try:
+            # Create BytesIO object from input bytes
+            doc_stream = BytesIO(file_bytes)
+            
+            # Load document using python-docx
+            doc = Document(doc_stream)
+            
+            logger.info(f"Creating preview document with {len(analysis_result)} fields to highlight")
+            
+            # Process all paragraphs
+            for paragraph in doc.paragraphs:
+                if paragraph.text.strip():
+                    self._highlight_fields_in_paragraph(paragraph, analysis_result)
+            
+            # Process all tables
+            for table in doc.tables:
+                for row in table.rows:
+                    for cell in row.cells:
+                        for paragraph in cell.paragraphs:
+                            if paragraph.text.strip():
+                                self._highlight_fields_in_paragraph(paragraph, analysis_result)
+            
+            # Save modified document to memory
+            output_stream = BytesIO()
+            doc.save(output_stream)
+            output_bytes = output_stream.getvalue()
+            
+            logger.info(f"Preview document created successfully. Output size: {len(output_bytes)} bytes")
+            return output_bytes
+            
+        except Exception as e:
+            logger.error(f"Error creating preview document: {e}")
+            raise
+    
+    def _highlight_fields_in_paragraph(self, paragraph, analysis_result: list):
+        """
+        Highlight fields in a paragraph by replacing original text with human readable names
+        and applying yellow highlight formatting.
+        
+        Args:
+            paragraph: python-docx paragraph object
+            analysis_result: List of field data from Gemini analysis
+        """
+        try:
+            original_text = paragraph.text
+            
+            # Check if this paragraph contains any field from analysis
+            for field_data in analysis_result:
+                original_field_text = field_data.get('original_text', '')
+                human_readable_name = field_data.get('human_readable_name', '')
+                
+                if original_field_text and human_readable_name and original_field_text in original_text:
+                    # Clear the paragraph
+                    paragraph.clear()
+                    
+                    # Split text around the field
+                    parts = original_text.split(original_field_text)
+                    
+                    # Add text before the field
+                    if parts[0]:
+                        paragraph.add_run(parts[0])
+                    
+                    # Add highlighted field
+                    highlighted_run = paragraph.add_run(human_readable_name)
+                    # Apply yellow highlight (highlight color)
+                    highlighted_run.font.highlight_color = 7  # Yellow highlight
+                    
+                    # Add text after the field
+                    if len(parts) > 1 and parts[1]:
+                        paragraph.add_run(parts[1])
+                    
+                    logger.debug(f"Highlighted field: '{original_field_text}' -> '{human_readable_name}'")
+                    break  # Only highlight the first matching field per paragraph
+            
+        except Exception as e:
+            logger.error(f"Error highlighting fields in paragraph: {e}")
+            # If highlighting fails, just replace the text without formatting
+            try:
+                original_text = paragraph.text
+                for field_data in analysis_result:
+                    original_field_text = field_data.get('original_text', '')
+                    human_readable_name = field_data.get('human_readable_name', '')
+                    
+                    if original_field_text and human_readable_name and original_field_text in original_text:
+                        paragraph.clear()
+                        paragraph.add_run(original_text.replace(original_field_text, human_readable_name))
+                        break
+            except Exception as e2:
+                logger.error(f"Error in fallback text replacement: {e2}")
+
     def _apply_replacements(self, text: str, replacements: dict) -> str:
         """
         Apply all replacements to a text string.

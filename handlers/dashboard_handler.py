@@ -3,9 +3,13 @@ Dashboard handler for personal cabinet functionality
 Handles template management and user dashboard
 """
 import asyncio
+import warnings
 from typing import Dict, Any
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes, ConversationHandler, MessageHandler, filters, CommandHandler, CallbackQueryHandler
+
+# Подавляем предупреждения PTBUserWarning для более чистого вывода
+warnings.filterwarnings("ignore", category=UserWarning, module="telegram")
 
 from config.settings import BotConfig
 from services.firestore_service import get_firestore_service

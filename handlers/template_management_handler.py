@@ -4,10 +4,14 @@ Handles template upload, analysis, and management workflow
 """
 import logging
 import asyncio
+import warnings
 from typing import Dict, Any, Optional
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes, ConversationHandler
 from telegram.error import BadRequest
+
+# Подавляем предупреждения PTBUserWarning для более чистого вывода
+warnings.filterwarnings("ignore", category=UserWarning, module="telegram")
 
 from config.settings import BotConfig
 from services.template_processor_service import TemplateProcessorService
@@ -143,7 +147,7 @@ class TemplateManagementHandler:
             
             print(f"🤖 [TEMPLATE] Отправляю файл в Gemini для анализа...")
             # Analyze document
-            replacements, field_names = await self.template_processor.analyze_document(file_bytes, file_format)
+            replacements, field_names, analysis_result = await self.template_processor.analyze_document(file_bytes, file_format)
             print(f"✅ [TEMPLATE] Gemini анализ завершен. Найдено полей: {len(field_names)}")
             
             if not field_names:
@@ -161,13 +165,16 @@ class TemplateManagementHandler:
             smart_template_bytes = self.template_processor.create_smart_template(file_bytes, replacements)
             print(f"✅ [TEMPLATE] Умный шаблон создан: {len(smart_template_bytes)} байт")
             
+            print(f"🎨 [TEMPLATE] Создаю preview документ с выделенными полями...")
+            # Create preview document with highlighted fields
+            preview_document_bytes = self.template_processor.create_preview_document(file_bytes, analysis_result)
+            print(f"✅ [TEMPLATE] Preview документ создан: {len(preview_document_bytes)} байт")
+            
             # Store data in context for later use
             context.user_data['smart_template_bytes'] = smart_template_bytes
+            context.user_data['preview_document_bytes'] = preview_document_bytes
             context.user_data['field_names'] = field_names
             context.user_data['original_file_name'] = document.file_name
-            
-            # Create field list message
-            field_list = "\n".join([f"• {field}" for field in field_names])
             
             keyboard = [
                 [
@@ -177,12 +184,23 @@ class TemplateManagementHandler:
             ]
             reply_markup = InlineKeyboardMarkup(keyboard)
             
-            print(f"📋 [TEMPLATE] Показываю пользователю найденные поля: {field_names}")
+            print(f"📋 [TEMPLATE] Отправляю preview документ пользователю...")
+            # Send preview document to user
             await analysis_msg.edit_text(
-                f"✅ **Анализ завершен!**\n\n"
-                f"Я нашел в вашем документе следующие поля для заполнения:\n\n"
-                f"{field_list}\n\n"
-                f"Всё верно?",
+                "✅ **Анализ завершен!**\n\n"
+                "Я подготовил предпросмотр. Пожалуйста, откройте файл и убедитесь, что я правильно определил все поля для заполнения (они выделены цветом).\n\n"
+                "Если всё верно, нажмите 'Да, сохранить'.",
+                parse_mode='Markdown'
+            )
+            
+            # Send the preview document as a file
+            from io import BytesIO
+            preview_file = BytesIO(preview_document_bytes)
+            preview_file.name = f"preview_{document.file_name}"
+            
+            await update.message.reply_document(
+                document=preview_file,
+                caption="📄 **Предпросмотр шаблона**\n\nПоля для заполнения выделены желтым цветом.",
                 reply_markup=reply_markup,
                 parse_mode='Markdown'
             )
@@ -314,6 +332,7 @@ class TemplateManagementHandler:
             
             # Clean up user data
             context.user_data.pop('smart_template_bytes', None)
+            context.user_data.pop('preview_document_bytes', None)
             context.user_data.pop('field_names', None)
             context.user_data.pop('original_file_name', None)
             print(f"🧹 [TEMPLATE] Очищены данные пользователя {user_id}")
@@ -347,6 +366,7 @@ class TemplateManagementHandler:
         try:
             # Clean up user data
             context.user_data.pop('smart_template_bytes', None)
+            context.user_data.pop('preview_document_bytes', None)
             context.user_data.pop('field_names', None)
             context.user_data.pop('original_file_name', None)
             

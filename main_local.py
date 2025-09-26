@@ -5,7 +5,11 @@ Uses polling instead of webhook for local development
 import logging
 import asyncio
 import os
+import warnings
 from dotenv import load_dotenv
+
+# Подавляем предупреждения PTBUserWarning для более чистого вывода
+warnings.filterwarnings("ignore", category=UserWarning, module="telegram")
 from telegram.ext import (
     Application,
     CommandHandler,

@@ -297,8 +297,9 @@ class TemplateProcessorService:
             # Load document using python-docx
             doc = Document(doc_stream)
             
-            # Create replacement mapping for preview
+            # Create replacement mapping for preview with unique keys
             preview_replacements = {}
+            field_counters = {'PARTY_2_NAME': 0, 'PARTY_2_REQUISITES': 0, 'PARTY_2_DIRECTOR_NAME': 0}
             print(f"🔍 [PREVIEW] Получено {len(replacements)} замен от Gemini:")
             for i, replacement in enumerate(replacements):
                 print(f"🔍 [PREVIEW] Замена {i+1}: type='{replacement['type']}', text='{replacement['original_text'][:50]}...'")
@@ -310,25 +311,40 @@ class TemplateProcessorService:
                 print(f"🔍 [PREVIEW] Обрабатываю замену: type='{field_type}', text='{original_text[:50]}...'")
                 
                 if field_type == 'PARTY_2_NAME':
-                    preview_replacements[original_text] = '[Наименование Контрагента]'
+                    field_counters['PARTY_2_NAME'] += 1
+                    unique_key = f"{original_text}_{field_counters['PARTY_2_NAME']}"
+                    preview_replacements[unique_key] = {
+                        'original_text': original_text,
+                        'replacement': '[Наименование Контрагента]'
+                    }
                     print(f"✅ [PREVIEW] Создана замена PARTY_2_NAME: '{original_text[:30]}...' -> '[Наименование Контрагента]'")
                 elif field_type == 'PARTY_2_REQUISITES':
+                    field_counters['PARTY_2_REQUISITES'] += 1
                     # Для реквизитов заменяем каждую строку блока отдельно,
                     # чтобы корректно попасть в соответствующие параграфы
                     lines = [l for l in original_text.split('\n') if l.strip()]
-                    for ln in lines:
-                        preview_replacements[ln] = '[Реквизиты Контрагента]'
+                    for i, ln in enumerate(lines):
+                        unique_key = f"{ln}_{field_counters['PARTY_2_REQUISITES']}_{i}"
+                        preview_replacements[unique_key] = {
+                            'original_text': ln,
+                            'replacement': '[Реквизиты Контрагента]'
+                        }
                         print(f"✅ [PREVIEW] Создана замена PARTY_2_REQUISITES: '{ln[:30]}...' -> '[Реквизиты Контрагента]'")
                 elif field_type == 'PARTY_2_DIRECTOR_NAME':
-                    preview_replacements[original_text] = '[Имя Директора]'
+                    field_counters['PARTY_2_DIRECTOR_NAME'] += 1
+                    unique_key = f"{original_text}_{field_counters['PARTY_2_DIRECTOR_NAME']}"
+                    preview_replacements[unique_key] = {
+                        'original_text': original_text,
+                        'replacement': '[Имя Директора]'
+                    }
                     print(f"✅ [PREVIEW] Создана замена PARTY_2_DIRECTOR_NAME: '{original_text[:30]}...' -> '[Имя Директора]'")
                 else:
                     print(f"⚠️ [PREVIEW] Неизвестный тип поля: '{field_type}'")
             
             print(f"✅ [PREVIEW] Создано {len(preview_replacements)} замен для предпросмотра")
             
-            # Apply replacements to document
-            self._apply_replacements_to_document(doc, preview_replacements, is_preview=True)
+            # Apply replacements to document with order preservation
+            self._apply_replacements_to_document_ordered(doc, preview_replacements, is_preview=True)
             
             # Save modified document to memory
             output_stream = BytesIO()
@@ -369,6 +385,8 @@ class TemplateProcessorService:
             
             # Create replacement mapping for smart template
             smart_replacements = {}
+            field_counters = {'PARTY_2_NAME': 0, 'PARTY_2_REQUISITES': 0, 'PARTY_2_DIRECTOR_NAME': 0}
+            
             for replacement in replacements:
                 original_text = replacement['original_text']
                 field_type = replacement['type']
@@ -376,16 +394,33 @@ class TemplateProcessorService:
                 print(f"🔍 [SMART] Обрабатываю замену: type='{field_type}', text='{original_text[:50]}...'")
                 
                 if field_type == 'PARTY_2_NAME':
-                    smart_replacements[original_text] = '{{PARTY_2_NAME}}'
+                    field_counters['PARTY_2_NAME'] += 1
+                    # Создаем уникальный ключ для каждой замены
+                    unique_key = f"{original_text}_{field_counters['PARTY_2_NAME']}"
+                    smart_replacements[unique_key] = {
+                        'original_text': original_text,
+                        'replacement': '{{PARTY_2_NAME}}'
+                    }
                     print(f"✅ [SMART] Создана замена PARTY_2_NAME: '{original_text[:30]}...' -> '{{PARTY_2_NAME}}'")
                 elif field_type == 'PARTY_2_REQUISITES':
+                    field_counters['PARTY_2_REQUISITES'] += 1
                     # Для реквизитов заменяем каждую строку блока отдельно на плейсхолдер реквизитов
                     lines = [l for l in original_text.split('\n') if l.strip()]
-                    for ln in lines:
-                        smart_replacements[ln] = '{{PARTY_2_REQUISITES}}'
+                    for i, ln in enumerate(lines):
+                        unique_key = f"{ln}_{field_counters['PARTY_2_REQUISITES']}_{i}"
+                        smart_replacements[unique_key] = {
+                            'original_text': ln,
+                            'replacement': '{{PARTY_2_REQUISITES}}'
+                        }
                         print(f"✅ [SMART] Создана замена PARTY_2_REQUISITES: '{ln[:30]}...' -> '{{PARTY_2_REQUISITES}}'")
                 elif field_type == 'PARTY_2_DIRECTOR_NAME':
-                    smart_replacements[original_text] = '{{PARTY_2_DIRECTOR_NAME}}'
+                    field_counters['PARTY_2_DIRECTOR_NAME'] += 1
+                    # Создаем уникальный ключ для каждой замены
+                    unique_key = f"{original_text}_{field_counters['PARTY_2_DIRECTOR_NAME']}"
+                    smart_replacements[unique_key] = {
+                        'original_text': original_text,
+                        'replacement': '{{PARTY_2_DIRECTOR_NAME}}'
+                    }
                     print(f"✅ [SMART] Создана замена PARTY_2_DIRECTOR_NAME: '{original_text[:30]}...' -> '{{PARTY_2_DIRECTOR_NAME}}'")
                 else:
                     print(f"⚠️ [SMART] Неизвестный тип поля: '{field_type}'")
@@ -395,8 +430,8 @@ class TemplateProcessorService:
             for original, replacement in smart_replacements.items():
                 print(f"🔍 [SMART] '{original[:30]}...' -> '{replacement}'")
             
-            # Apply replacements to document
-            self._apply_replacements_to_document(doc, smart_replacements, is_preview=False)
+            # Apply replacements to document with order preservation
+            self._apply_replacements_to_document_ordered(doc, smart_replacements, is_preview=False)
             
             # Save modified document to memory
             output_stream = BytesIO()
@@ -442,6 +477,93 @@ class TemplateProcessorService:
         except Exception as e:
             print(f"❌ [APPLY] Ошибка при применении замен: {e}")
             logger.error(f"Error applying replacements to document: {e}")
+    
+    def _apply_replacements_to_document_ordered(self, doc: Document, smart_replacements: Dict[str, Dict], is_preview: bool = True):
+        """
+        Apply replacements to document with order preservation for identical text.
+        
+        Args:
+            doc: python-docx Document object
+            smart_replacements: Dictionary with unique keys and replacement data
+            is_preview: Whether this is for preview (red formatting) or smart template
+        """
+        try:
+            print(f"🔧 [APPLY] Применяю {len(smart_replacements)} замен к документу с сохранением порядка...")
+            
+            # Convert to list of replacements with order
+            replacements_list = []
+            for key, data in smart_replacements.items():
+                replacements_list.append({
+                    'original_text': data['original_text'],
+                    'replacement': data['replacement']
+                })
+            
+            # Process all paragraphs
+            for paragraph in doc.paragraphs:
+                if paragraph.text.strip():
+                    self._apply_replacements_to_paragraph_ordered(paragraph, replacements_list, is_preview)
+            
+            # Process all tables
+            for table in doc.tables:
+                for row in table.rows:
+                    for cell in row.cells:
+                        for paragraph in cell.paragraphs:
+                            if paragraph.text.strip():
+                                self._apply_replacements_to_paragraph_ordered(paragraph, replacements_list, is_preview)
+            
+            print(f"✅ [APPLY] Замены применены к документу с сохранением порядка")
+            
+        except Exception as e:
+            print(f"❌ [APPLY] Ошибка при применении замен с сохранением порядка: {e}")
+            logger.error(f"Error applying ordered replacements to document: {e}")
+    
+    def _apply_replacements_to_paragraph_ordered(self, paragraph, replacements_list: List[Dict], is_preview: bool = True):
+        """
+        Apply replacements to paragraph with order preservation.
+        
+        Args:
+            paragraph: python-docx paragraph object
+            replacements_list: List of replacement dictionaries
+            is_preview: Whether this is for preview (red formatting) or smart template
+        """
+        try:
+            original_text = paragraph.text
+            
+            # Apply replacements in order, but only once per occurrence
+            applied_replacements = set()
+            
+            for replacement in replacements_list:
+                original_part = replacement['original_text']
+                replacement_text = replacement['replacement']
+                
+                if not original_part.strip():
+                    continue
+                
+                # Check if this paragraph contains the replacement text
+                if original_part in original_text:
+                    # Create a unique identifier for this replacement
+                    replacement_id = f"{original_part}_{original_text.find(original_part)}"
+                    
+                    if replacement_id not in applied_replacements:
+                        # Apply the replacement
+                        new_text = original_text.replace(original_part, replacement_text, 1)  # Replace only first occurrence
+                        if new_text != original_text:
+                            print(f"🔍 [REPLACE] Найдено совпадение в параграфе:")
+                            print(f"🔍 [REPLACE] Исходный текст параграфа: '{original_text[:50]}...'")
+                            print(f"🔍 [REPLACE] Ищем: '{original_part[:50]}...'")
+                            print(f"🔍 [REPLACE] Заменяем на: '{replacement_text}'")
+                            print(f"🔍 [REPLACE] Тип файла: {'предпросмотр' if is_preview else 'умный шаблон'}")
+                            
+                            # Update paragraph text
+                            paragraph.text = new_text
+                            original_text = new_text  # Update for next iteration
+                            applied_replacements.add(replacement_id)
+                            
+                            print(f"✅ [REPLACE] Применена замена: '{original_part[:30]}...' -> '{replacement_text}'")
+                            
+        except Exception as e:
+            print(f"❌ [REPLACE] Ошибка при замене в параграфе: {e}")
+            logger.error(f"Error applying replacement to paragraph: {e}")
     
     def _apply_replacements_to_paragraph(self, paragraph, replacements: Dict[str, str], is_preview: bool = True):
         """

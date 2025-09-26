@@ -82,11 +82,15 @@ class DashboardHandler:
         
         document = update.message.document
         
-        # Check if it's a .docx file
+        # Check if it's a .docx or .doc file
         file_name = document.file_name or ""
         mime_type = document.mime_type or ""
         
-        if not (file_name.lower().endswith('.docx') or mime_type == 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'):
+        file_name_lower = file_name.lower()
+        is_docx = file_name_lower.endswith('.docx') or mime_type == 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+        is_doc = file_name_lower.endswith('.doc') or mime_type == 'application/msword'
+        
+        if not (is_docx or is_doc):
             await update.message.reply_text(
                 self._get_invalid_file_type_message(language),
                 parse_mode='HTML'
@@ -309,20 +313,22 @@ Use the buttons below to manage your templates.
             'en': """
 📄 <b>Add New Template</b>
 
-Please send me a template file in .docx format.
+Please send me a template file in .docx or .doc format.
 
 <b>Supported formats:</b>
 • .docx (Microsoft Word document)
+• .doc (Microsoft Word document)
 
 Just upload your file and I'll guide you through the process!
             """,
             'ru': """
 📄 <b>Добавить новый шаблон</b>
 
-Пожалуйста, отправьте мне файл шаблона в формате .docx.
+Пожалуйста, отправьте мне файл шаблона в формате .docx или .doc.
 
 <b>Поддерживаемые форматы:</b>
 • .docx (документ Microsoft Word)
+• .doc (документ Microsoft Word)
 
 Просто загрузите ваш файл, и я проведу вас через процесс!
             """
@@ -340,8 +346,8 @@ Just upload your file and I'll guide you through the process!
     def _get_invalid_file_type_message(self, language: str) -> str:
         """Get invalid file type message"""
         messages = {
-            'en': "❌ Please send a .docx file. Other formats are not supported.",
-            'ru': "❌ Пожалуйста, отправьте файл .docx. Другие форматы не поддерживаются."
+            'en': "❌ Please send a .docx or .doc file. Other formats are not supported.",
+            'ru': "❌ Пожалуйста, отправьте файл .docx или .doc. Другие форматы не поддерживаются."
         }
         return messages.get(language, messages['en'])
     

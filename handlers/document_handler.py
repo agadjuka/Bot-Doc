@@ -90,7 +90,7 @@ class DocumentHandler(BaseMessageHandler):
             # Send the document to user
             await update.message.reply_document(
                 document=document_bytes,
-                filename="company_info.docx",
+                filename="company_info.docx",  # Always save as .docx for generated documents
                 caption="📄 Документ готов! Вот информация о компании в формате Word."
             )
             

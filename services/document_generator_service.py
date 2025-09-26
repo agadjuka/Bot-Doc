@@ -1,5 +1,5 @@
 """
-Document Generator Service for creating .docx files from templates
+Document Generator Service for creating .docx and .doc files from templates
 """
 import io
 import os
@@ -8,7 +8,7 @@ from docxtpl import DocxTemplate
 
 
 class DocumentGeneratorService:
-    """Service for generating .docx documents from templates"""
+    """Service for generating .docx and .doc documents from templates"""
     
     def __init__(self, templates_dir: str = "templates"):
         """
@@ -27,7 +27,7 @@ class DocumentGeneratorService:
         Fill a document template with provided data
         
         Args:
-            template_path: Path to the .docx template file
+            template_path: Path to the .docx or .doc template file
             data: Dictionary with data to fill the template
             
         Returns:
@@ -76,13 +76,13 @@ class DocumentGeneratorService:
         Get full path to a template file
         
         Args:
-            template_name: Name of the template file (with or without .docx extension)
+            template_name: Name of the template file (with or without .docx/.doc extension)
             
         Returns:
             Full path to the template file
         """
-        if not template_name.endswith('.docx'):
-            template_name += '.docx'
+        if not (template_name.endswith('.docx') or template_name.endswith('.doc')):
+            template_name += '.docx'  # Default to .docx if no extension
         
         return os.path.join(self.templates_dir, template_name)
     
@@ -99,7 +99,7 @@ class DocumentGeneratorService:
             
             templates = []
             for file in os.listdir(self.templates_dir):
-                if file.endswith('.docx'):
+                if file.endswith('.docx') or file.endswith('.doc'):
                     templates.append(file)
             
             return templates

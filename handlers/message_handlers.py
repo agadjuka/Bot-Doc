@@ -103,8 +103,8 @@ class MessageHandlers(BaseMessageHandler):
             language = self.locale_manager.get_user_language(user_id)
             
             message_text = {
-                'en': "📄 <b>Document Upload</b>\n\nTo add a template, please use the Personal Cabinet:\n1. Click 'Personal Cabinet' button\n2. Click 'Add New Template'\n3. Upload your .docx file",
-                'ru': "📄 <b>Загрузка документа</b>\n\nЧтобы добавить шаблон, используйте Личный кабинет:\n1. Нажмите кнопку 'Личный кабинет'\n2. Нажмите 'Добавить новый шаблон'\n3. Загрузите ваш .docx файл"
+                'en': "📄 <b>Document Upload</b>\n\nTo add a template, please use the Personal Cabinet:\n1. Click 'Personal Cabinet' button\n2. Click 'Add New Template'\n3. Upload your .docx or .doc file",
+                'ru': "📄 <b>Загрузка документа</b>\n\nЧтобы добавить шаблон, используйте Личный кабинет:\n1. Нажмите кнопку 'Личный кабинет'\n2. Нажмите 'Добавить новый шаблон'\n3. Загрузите ваш .docx или .doc файл"
             }
             
             await update.message.reply_text(

@@ -84,7 +84,7 @@ class TemplateManagementHandler:
             
             await query.edit_message_text(
                 "📄 **Загрузка нового шаблона**\n\n"
-                "Пожалуйста, отправьте мне ваш шаблон в формате .docx",
+                "Пожалуйста, отправьте мне ваш шаблон в формате .docx или .doc",
                 parse_mode='Markdown'
             )
             
@@ -113,14 +113,19 @@ class TemplateManagementHandler:
             print(f"📄 [TEMPLATE] Пользователь {user_id} загрузил файл: {document.file_name} ({document.file_size} байт)")
             
             # Check file extension
-            if not document.file_name.lower().endswith('.docx'):
+            file_name_lower = document.file_name.lower()
+            if not (file_name_lower.endswith('.docx') or file_name_lower.endswith('.doc')):
                 print(f"❌ [TEMPLATE] Неверный формат файла: {document.file_name}")
                 await update.message.reply_text(
                     "❌ **Ошибка формата файла**\n\n"
-                    "Пожалуйста, отправьте файл в формате .docx",
+                    "Пожалуйста, отправьте файл в формате .docx или .doc",
                     parse_mode='Markdown'
                 )
                 return self.config.AWAITING_TEMPLATE_UPLOAD
+            
+            # Determine file format
+            file_format = '.docx' if file_name_lower.endswith('.docx') else '.doc'
+            context.user_data['original_file_format'] = file_format
             
             # Send analysis message
             analysis_msg = await update.message.reply_text(
@@ -138,7 +143,7 @@ class TemplateManagementHandler:
             
             print(f"🤖 [TEMPLATE] Отправляю файл в Gemini для анализа...")
             # Analyze document
-            replacements, field_names = await self.template_processor.analyze_document(file_bytes)
+            replacements, field_names = await self.template_processor.analyze_document(file_bytes, file_format)
             print(f"✅ [TEMPLATE] Gemini анализ завершен. Найдено полей: {len(field_names)}")
             
             if not field_names:
@@ -266,8 +271,9 @@ class TemplateManagementHandler:
                 )
                 return ConversationHandler.END
             
-            # Create destination path
-            destination_path = f"user_{user_id}/{template_name}.docx"
+            # Create destination path with original file format
+            original_format = context.user_data.get('original_file_format', '.docx')
+            destination_path = f"user_{user_id}/{template_name}{original_format}"
             print(f"📁 [TEMPLATE] Путь для сохранения: {destination_path}")
             
             print(f"☁️ [TEMPLATE] Загружаю файл в Cloud Storage...")

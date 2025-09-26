@@ -12,6 +12,7 @@ from io import BytesIO
 import google.generativeai as genai
 from google.oauth2 import service_account
 from docx import Document
+import docx2txt
 
 logger = logging.getLogger(__name__)
 
@@ -105,12 +106,13 @@ class TemplateProcessorService:
             logger.error(f"Error analyzing text: {e}")
             return {}, []
 
-    async def analyze_document(self, file_bytes: bytes) -> Tuple[Dict[str, str], List[str]]:
+    async def analyze_document(self, file_bytes: bytes, file_format: str = '.docx') -> Tuple[Dict[str, str], List[str]]:
         """
         Analyze a document and identify fields that need to be filled with company data.
         
         Args:
             file_bytes: Document content as bytes
+            file_format: File format ('.docx' or '.doc')
             
         Returns:
             Tuple containing:
@@ -121,8 +123,15 @@ class TemplateProcessorService:
             print(f"📄 [GEMINI] Начинаю анализ документа размером {len(file_bytes)} байт")
             
             # Step 1: Extract text from document
-            print(f"📖 [GEMINI] Извлекаю текст из DOCX файла...")
-            document_text = self._extract_text_from_docx(file_bytes)
+            if file_format == '.docx':
+                print(f"📖 [GEMINI] Извлекаю текст из DOCX файла...")
+                document_text = self._extract_text_from_docx(file_bytes)
+            elif file_format == '.doc':
+                print(f"📖 [GEMINI] Извлекаю текст из DOC файла...")
+                document_text = self._extract_text_from_doc(file_bytes)
+            else:
+                print(f"❌ [GEMINI] Неподдерживаемый формат файла: {file_format}")
+                return {}, []
             
             if not document_text.strip():
                 print(f"⚠️ [GEMINI] Документ пустой или не удалось прочитать")
@@ -207,6 +216,34 @@ class TemplateProcessorService:
             
         except Exception as e:
             logger.error(f"Error extracting text from DOCX: {e}")
+            return ""
+    
+    def _extract_text_from_doc(self, file_bytes: bytes) -> str:
+        """
+        Extract text content from a DOC file.
+        
+        Args:
+            file_bytes: Document content as bytes
+            
+        Returns:
+            Extracted text content
+        """
+        try:
+            # Create BytesIO object from bytes
+            doc_stream = BytesIO(file_bytes)
+            
+            # Use docx2txt to extract text from DOC file
+            text = docx2txt.process(doc_stream)
+            
+            if text:
+                logger.info(f"Extracted {len(text)} characters from DOC document")
+                return text
+            else:
+                logger.warning("No text extracted from DOC document")
+                return ""
+            
+        except Exception as e:
+            logger.error(f"Error extracting text from DOC: {e}")
             return ""
     
     def _create_analysis_prompt(self, document_text: str) -> str:

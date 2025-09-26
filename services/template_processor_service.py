@@ -7,6 +7,7 @@ import json
 import logging
 import os
 import re
+import tempfile
 from typing import Dict, List, Tuple
 from io import BytesIO
 
@@ -15,6 +16,7 @@ from google.oauth2 import service_account
 from docx import Document
 from docx.shared import RGBColor
 import docx2txt
+from docx2markdown._docx_to_markdown import docx_to_markdown
 
 from config.prompts import PromptManager
 
@@ -156,37 +158,45 @@ class TemplateProcessorService:
     
     def _extract_text_from_docx(self, file_bytes: bytes) -> str:
         """
-        Extract text content from a DOCX file.
+        Extract text content from a DOCX file and convert to Markdown format.
         
         Args:
             file_bytes: Document content as bytes
             
         Returns:
-            Extracted text content
+            Extracted text content in Markdown format
         """
         try:
-            # Create BytesIO object from bytes
-            doc_stream = BytesIO(file_bytes)
+            # Create temporary files for input and output
+            with tempfile.NamedTemporaryFile(suffix='.docx', delete=False) as temp_docx:
+                temp_docx.write(file_bytes)
+                temp_docx_path = temp_docx.name
             
-            # Load document
-            doc = Document(doc_stream)
+            with tempfile.NamedTemporaryFile(suffix='.md', delete=False) as temp_md:
+                temp_md_path = temp_md.name
             
-            # Extract text from all paragraphs
-            text_parts = []
-            for paragraph in doc.paragraphs:
-                if paragraph.text.strip():
-                    text_parts.append(paragraph.text.strip())
-            
-            # Also extract text from tables
-            for table in doc.tables:
-                for row in table.rows:
-                    for cell in row.cells:
-                        if cell.text.strip():
-                            text_parts.append(cell.text.strip())
-            
-            full_text = '\n'.join(text_parts)
-            logger.info(f"Extracted {len(full_text)} characters from document")
-            return full_text
+            try:
+                # Convert DOCX to Markdown using docx2markdown
+                docx_to_markdown(temp_docx_path, temp_md_path)
+                
+                # Read the generated markdown file
+                with open(temp_md_path, 'r', encoding='utf-8') as md_file:
+                    markdown_text = md_file.read()
+                
+                if markdown_text:
+                    logger.info(f"Extracted {len(markdown_text)} characters from document in Markdown format")
+                    return markdown_text
+                else:
+                    logger.warning("No text extracted from DOCX document")
+                    return ""
+                    
+            finally:
+                # Clean up temporary files
+                try:
+                    os.unlink(temp_docx_path)
+                    os.unlink(temp_md_path)
+                except OSError:
+                    pass
             
         except Exception as e:
             logger.error(f"Error extracting text from DOCX: {e}")
@@ -253,6 +263,8 @@ class TemplateProcessorService:
             if response.text:
                 print(f"✅ [GEMINI] Получен ответ от Gemini: {len(response.text)} символов")
                 print(f"🔍 [GEMINI] Первые 200 символов ответа: {response.text[:200]}")
+                print(f"🔍 [GEMINI] Полный ответ от Gemini:")
+                print(f"🔍 [GEMINI] {response.text}")
                 logger.info("Received response from Gemini")
                 return response.text
             else:
@@ -287,19 +299,31 @@ class TemplateProcessorService:
             
             # Create replacement mapping for preview
             preview_replacements = {}
+            print(f"🔍 [PREVIEW] Получено {len(replacements)} замен от Gemini:")
+            for i, replacement in enumerate(replacements):
+                print(f"🔍 [PREVIEW] Замена {i+1}: type='{replacement['type']}', text='{replacement['original_text'][:50]}...'")
+            
             for replacement in replacements:
                 original_text = replacement['original_text']
                 field_type = replacement['type']
                 
+                print(f"🔍 [PREVIEW] Обрабатываю замену: type='{field_type}', text='{original_text[:50]}...'")
+                
                 if field_type == 'PARTY_2_NAME':
                     preview_replacements[original_text] = '[Наименование Контрагента]'
+                    print(f"✅ [PREVIEW] Создана замена PARTY_2_NAME: '{original_text[:30]}...' -> '[Наименование Контрагента]'")
                 elif field_type == 'PARTY_2_REQUISITES':
-                    # Для реквизитов в файле предпросмотра заменяем только первую строку
-                    lines = original_text.split('\n')
-                    if lines:
-                        preview_replacements[lines[0]] = '[Реквизиты Контрагента]'
+                    # Для реквизитов заменяем каждую строку блока отдельно,
+                    # чтобы корректно попасть в соответствующие параграфы
+                    lines = [l for l in original_text.split('\n') if l.strip()]
+                    for ln in lines:
+                        preview_replacements[ln] = '[Реквизиты Контрагента]'
+                        print(f"✅ [PREVIEW] Создана замена PARTY_2_REQUISITES: '{ln[:30]}...' -> '[Реквизиты Контрагента]'")
                 elif field_type == 'PARTY_2_DIRECTOR_NAME':
                     preview_replacements[original_text] = '[Имя Директора]'
+                    print(f"✅ [PREVIEW] Создана замена PARTY_2_DIRECTOR_NAME: '{original_text[:30]}...' -> '[Имя Директора]'")
+                else:
+                    print(f"⚠️ [PREVIEW] Неизвестный тип поля: '{field_type}'")
             
             print(f"✅ [PREVIEW] Создано {len(preview_replacements)} замен для предпросмотра")
             
@@ -333,6 +357,9 @@ class TemplateProcessorService:
         """
         try:
             print(f"🔧 [SMART] Создаю умный шаблон...")
+            print(f"🔍 [SMART] Получено {len(replacements)} замен от Gemini:")
+            for i, replacement in enumerate(replacements):
+                print(f"🔍 [SMART] Замена {i+1}: type='{replacement['type']}', text='{replacement['original_text'][:50]}...'")
             
             # Create BytesIO object from input bytes
             doc_stream = BytesIO(file_bytes)
@@ -346,15 +373,27 @@ class TemplateProcessorService:
                 original_text = replacement['original_text']
                 field_type = replacement['type']
                 
+                print(f"🔍 [SMART] Обрабатываю замену: type='{field_type}', text='{original_text[:50]}...'")
+                
                 if field_type == 'PARTY_2_NAME':
                     smart_replacements[original_text] = '{{PARTY_2_NAME}}'
+                    print(f"✅ [SMART] Создана замена PARTY_2_NAME: '{original_text[:30]}...' -> '{{PARTY_2_NAME}}'")
                 elif field_type == 'PARTY_2_REQUISITES':
-                    # Для реквизитов в умном шаблоне заменяем всю таблицу
-                    smart_replacements[original_text] = '{{PARTY_2_REQUISITES}}'
+                    # Для реквизитов заменяем каждую строку блока отдельно на плейсхолдер реквизитов
+                    lines = [l for l in original_text.split('\n') if l.strip()]
+                    for ln in lines:
+                        smart_replacements[ln] = '{{PARTY_2_REQUISITES}}'
+                        print(f"✅ [SMART] Создана замена PARTY_2_REQUISITES: '{ln[:30]}...' -> '{{PARTY_2_REQUISITES}}'")
                 elif field_type == 'PARTY_2_DIRECTOR_NAME':
                     smart_replacements[original_text] = '{{PARTY_2_DIRECTOR_NAME}}'
+                    print(f"✅ [SMART] Создана замена PARTY_2_DIRECTOR_NAME: '{original_text[:30]}...' -> '{{PARTY_2_DIRECTOR_NAME}}'")
+                else:
+                    print(f"⚠️ [SMART] Неизвестный тип поля: '{field_type}'")
             
             print(f"✅ [SMART] Создано {len(smart_replacements)} замен для умного шаблона")
+            print(f"🔍 [SMART] Итоговые замены:")
+            for original, replacement in smart_replacements.items():
+                print(f"🔍 [SMART] '{original[:30]}...' -> '{replacement}'")
             
             # Apply replacements to document
             self._apply_replacements_to_document(doc, smart_replacements, is_preview=False)
@@ -416,14 +455,26 @@ class TemplateProcessorService:
         try:
             original_text = paragraph.text
             
-            # Check if this paragraph contains any replacement
+            # Check if this paragraph contains any replacement (строгое совпадение для строк подчеркиваний)
             for original_part, replacement_text in replacements.items():
-                if original_part.strip() and original_part in original_text:
+                if not original_part.strip():
+                    continue
+                # Для линий из подчеркиваний и пробелов требуем точного совпадения,
+                # чтобы короткие линии (директор) не заменяли длинные (реквизиты)
+                is_underscore_only = bool(re.fullmatch(r"[_\s]+", original_part))
+                match = (original_text == original_part) if is_underscore_only else (original_part in original_text)
+                if match:
+                    print(f"🔍 [REPLACE] Найдено совпадение в параграфе:")
+                    print(f"🔍 [REPLACE] Исходный текст параграфа: '{original_text[:100]}...'")
+                    print(f"🔍 [REPLACE] Ищем: '{original_part[:50]}...'")
+                    print(f"🔍 [REPLACE] Заменяем на: '{replacement_text}'")
+                    print(f"🔍 [REPLACE] Тип файла: {'предпросмотр' if is_preview else 'умный шаблон'}")
+                    
                     # Clear the paragraph
                     paragraph.clear()
                     
                     # Split text around the original part
-                    parts = original_text.split(original_part)
+                    parts = ["", ""] if original_text == original_part else original_text.split(original_part)
                     
                     # Add text before the field
                     if parts[0]:
@@ -536,10 +587,15 @@ class TemplateProcessorService:
                     if item['type'] in ['PARTY_2_NAME', 'PARTY_2_REQUISITES', 'PARTY_2_DIRECTOR_NAME']:
                         valid_fields.append(item)
                         print(f"✅ [PARSE] Найдено поле: {item['type']} -> '{item['original_text'][:50]}...'")
+                        print(f"🔍 [PARSE] Полный текст поля: '{item['original_text']}'")
                     else:
                         print(f"⚠️ [PARSE] Неизвестный тип поля: {item['type']}")
                 else:
                     print(f"⚠️ [PARSE] Некорректный формат поля: {item}")
+            
+            print(f"🔍 [PARSE] Итоговый список валидных полей:")
+            for i, field in enumerate(valid_fields):
+                print(f"🔍 [PARSE] Поле {i+1}: type='{field['type']}', text='{field['original_text'][:100]}...'")
             
             logger.info(f"Successfully parsed {len(valid_fields)} valid fields from Gemini response")
             return valid_fields

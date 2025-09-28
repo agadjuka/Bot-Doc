@@ -107,31 +107,3 @@ class DocumentParserService:
             # Return empty data with null values
             return {field: None for field in self.required_fields}
     
-    def get_required_fields(self) -> list:
-        """Get list of required fields for extraction"""
-        return self.required_fields.copy()
-    
-    def validate_extracted_data(self, data: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Validate and clean extracted data
-        
-        Args:
-            data: Extracted data dictionary
-            
-        Returns:
-            Validated and cleaned data dictionary
-        """
-        validated_data = {}
-        
-        for field in self.required_fields:
-            value = data.get(field)
-            
-            # Clean the value if it exists
-            if value and isinstance(value, str):
-                value = value.strip()
-                if not value:
-                    value = None
-            
-            validated_data[field] = value
-        
-        return validated_data

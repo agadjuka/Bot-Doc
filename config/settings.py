@@ -41,8 +41,6 @@ class BotConfig:
         self.DISABLE_OPENCV_ANALYSIS: bool = os.getenv("DISABLE_OPENCV_ANALYSIS", "true").lower() == "true"
         self.GEMINI_ANALYSIS_MODE: str = os.getenv("GEMINI_ANALYSIS_MODE", "production")
         
-        # Debug settings
-        self.DEBUG_GEMINI_PROMPT: bool = os.getenv("DEBUG_GEMINI_PROMPT", "false").lower() == "true"
         
         # Переопределяем локацию из переменных окружения если задана
         if os.getenv("GOOGLE_CLOUD_LOCATION"):

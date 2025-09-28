@@ -17,6 +17,7 @@ import google.generativeai as genai
 from google.oauth2 import service_account
 from docx import Document
 from docx.shared import RGBColor
+from docx.oxml.shared import qn
 import docx2txt
 from docx2markdown._docx_to_markdown import docx_to_markdown
 
@@ -39,6 +40,56 @@ class TemplateProcessorService:
         self._initialize_gemini()
         logger.info("TemplateProcessorService initialized successfully")
     
+    def _remove_highlighting(self, run):
+        """
+        Remove yellow highlighting from a run by clearing background color.
+        
+        Args:
+            run: python-docx run object
+        """
+        try:
+            # Remove highlighting by clearing the highlight property
+            if hasattr(run, '_element'):
+                # Remove w:highlight attribute if it exists
+                if run._element.get(qn('w:highlight')):
+                    del run._element.attrib[qn('w:highlight')]
+                
+                # Remove w:shd (shading) attribute if it exists
+                if run._element.get(qn('w:shd')):
+                    del run._element.attrib[qn('w:shd')]
+                
+                # Also check for highlighting in the run's properties
+                run_props = run._element.find(qn('w:rPr'))
+                if run_props is not None:
+                    highlight_elem = run_props.find(qn('w:highlight'))
+                    if highlight_elem is not None:
+                        run_props.remove(highlight_elem)
+                    
+                    shading_elem = run_props.find(qn('w:shd'))
+                    if shading_elem is not None:
+                        run_props.remove(shading_elem)
+                
+                # Additional cleanup for any background color formatting
+                # Remove any w:color with background color
+                color_elem = run_props.find(qn('w:color')) if run_props is not None else None
+                if color_elem is not None:
+                    # Check if it's a background color (usually has w:val="auto" or specific color)
+                    if color_elem.get(qn('w:val')) in ['auto', 'yellow', 'FFFF00']:
+                        run_props.remove(color_elem)
+            
+            # Also try to remove highlighting using python-docx properties
+            if hasattr(run, 'font') and hasattr(run.font, 'highlight_color'):
+                try:
+                    run.font.highlight_color = None
+                except:
+                    pass
+            
+            print(f"✅ [HIGHLIGHT] Удалена желтая заливка из run: '{run.text[:50]}...'")
+            
+        except Exception as e:
+            print(f"⚠️ [HIGHLIGHT] Ошибка при удалении заливки: {e}")
+            # Не критично, продолжаем работу
+
     def _initialize_gemini(self):
         """Initialize Google Gemini AI service using Google Cloud authentication"""
         try:
@@ -182,6 +233,12 @@ class TemplateProcessorService:
             print(f"   - Preview: {len(preview_coords_dictionary)} run-ов")
             print(f"   - Smart template: {len(smart_template_coords_dictionary)} run-ов")
             
+            # Step 2.5: Remove all yellow highlighting from preview document
+            print(f"🧹 [SURGERY] Удаляю желтую заливку из preview документа...")
+            for run_id, run in preview_coords_dictionary.items():
+                self._remove_highlighting(run)
+            print(f"✅ [SURGERY] Желтая заливка удалена из preview документа")
+            
             # Проверяем, что копии действительно независимы
             print(f"🔍 [DEBUG] Проверяю независимость копий...")
             print(f"🔍 [DEBUG] Оригинальный документ: {len(doc_object.paragraphs)} параграфов")
@@ -241,6 +298,9 @@ class TemplateProcessorService:
                 # Apply edit to preview document
                 print(f"🎨 [SURGERY] Применяю правку к preview документу...")
                 print(f"🔍 [DEBUG] Preview run ДО изменений: '{preview_run.text}'")
+                
+                # Удаляем желтую заливку перед применением изменений
+                self._remove_highlighting(preview_run)
                 
                 # КРИТИЧЕСКИ ВАЖНО: Изменяем run напрямую в документе
                 # Очищаем run и добавляем новый текст
@@ -343,7 +403,7 @@ class TemplateProcessorService:
             traceback.print_exc()
             return b'', b''
     
-    async def analyze_and_prepare_templates(self, file_bytes: bytes, file_format: str = '.docx', debug_callback=None) -> Tuple[bytes, bytes]:
+    async def analyze_and_prepare_templates(self, file_bytes: bytes, file_format: str = '.docx') -> Tuple[bytes, bytes]:
         """
         Analyze document and prepare two files: preview for user and smart template for storage.
         
@@ -388,7 +448,7 @@ class TemplateProcessorService:
             print(f"🔍 [GEMINI] Создан промпт длиной {len(prompt)} символов")
             
             # Send request to Gemini
-            gemini_response = await self._send_gemini_request(prompt, debug_callback)
+            gemini_response = await self._send_gemini_request(prompt)
             
             if not gemini_response:
                 print(f"❌ [GEMINI] Пустой ответ от Gemini")
@@ -521,7 +581,7 @@ class TemplateProcessorService:
         print(f"🔍 [PROMPT] Первые 200 символов промпта: {prompt[:200]}")
         return prompt
     
-    async def _send_gemini_request(self, prompt: str, debug_callback=None) -> str:
+    async def _send_gemini_request(self, prompt: str) -> str:
         """
         Send request to Gemini API.
         
@@ -533,13 +593,6 @@ class TemplateProcessorService:
         """
         try:
             print(f"🚀 [GEMINI] Отправляю запрос в Gemini API...")
-            
-            # Debug: Send prompt to chat if debug_callback is provided
-            if debug_callback:
-                try:
-                    await debug_callback(prompt)
-                except Exception as e:
-                    print(f"⚠️ [DEBUG] Ошибка при отправке промпта в чат: {e}")
             
             # Generate content using Gemini
             response = self.model.generate_content(prompt)
@@ -889,6 +942,8 @@ class TemplateProcessorService:
                     # Add replacement text with formatting
                     replacement_run = paragraph.add_run(replacement_text)
                     if is_preview:
+                        # Удаляем желтую заливку перед применением форматирования
+                        self._remove_highlighting(replacement_run)
                         # Red formatting for preview
                         replacement_run.font.color.rgb = RGBColor(255, 0, 0)  # Red color
                         replacement_run.font.bold = True

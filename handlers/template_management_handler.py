@@ -147,34 +147,8 @@ class TemplateManagementHandler:
             
             print(f"🤖 [TEMPLATE] Отправляю файл в Gemini для анализа...")
             
-            # Create debug callback if debug mode is enabled
-            debug_callback = None
-            if self.config.DEBUG_GEMINI_PROMPT:
-                async def send_prompt_to_chat(prompt: str):
-                    """Send prompt to chat for debugging"""
-                    try:
-                        # Split prompt into chunks if it's too long
-                        max_length = 4000  # Telegram message limit
-                        if len(prompt) <= max_length:
-                            await update.message.reply_text(
-                                f"🔍 **DEBUG: Промпт для Gemini**\n\n```markdown\n{prompt}\n```",
-                                parse_mode='Markdown'
-                            )
-                        else:
-                            # Send in chunks
-                            chunks = [prompt[i:i+max_length] for i in range(0, len(prompt), max_length)]
-                            for i, chunk in enumerate(chunks):
-                                await update.message.reply_text(
-                                    f"🔍 **DEBUG: Промпт для Gemini (часть {i+1}/{len(chunks)})**\n\n```markdown\n{chunk}\n```",
-                                    parse_mode='Markdown'
-                                )
-                    except Exception as e:
-                        print(f"⚠️ [DEBUG] Ошибка при отправке промпта в чат: {e}")
-                
-                debug_callback = send_prompt_to_chat
-            
             # Analyze document using new two-file method
-            preview_bytes, smart_template_bytes = await self.template_processor.analyze_and_prepare_templates(file_bytes, file_format, debug_callback)
+            preview_bytes, smart_template_bytes = await self.template_processor.analyze_and_prepare_templates(file_bytes, file_format)
             print(f"✅ [TEMPLATE] Анализ завершен")
             
             if not preview_bytes or not smart_template_bytes:

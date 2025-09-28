@@ -12,6 +12,15 @@ from google.oauth2 import service_account
 from config.settings import BotConfig
 from config.prompts import PromptManager
 
+# ВРЕМЕННЫЙ ДЕБАГ - можно удалить после отладки
+try:
+    from debug_gemini_logger import log_gemini_request, log_gemini_response
+    DEBUG_GEMINI = True
+except ImportError:
+    DEBUG_GEMINI = False
+    def log_gemini_request(*args, **kwargs): return ""
+    def log_gemini_response(*args, **kwargs): return ""
+
 
 class AIService:
     """Service for basic AI operations using Google Gemini - Template version"""
@@ -69,6 +78,16 @@ class AIService:
             # Get prompt from PromptManager
             prompt = self.prompt_manager.get_ai_response_prompt(user_text, language)
             
+            # ВРЕМЕННЫЙ ДЕБАГ - логируем запрос
+            request_file = ""
+            if DEBUG_GEMINI:
+                request_file = log_gemini_request(
+                    prompt=prompt,
+                    service_name="AIService",
+                    user_id=None,
+                    additional_info={"user_text": user_text, "language": language}
+                )
+            
             # Generate response with timeout
             response = await asyncio.wait_for(
                 asyncio.get_event_loop().run_in_executor(
@@ -78,10 +97,30 @@ class AIService:
                 timeout=30.0  # 30 seconds timeout
             )
             
-            return response.text.strip()
+            response_text = response.text.strip()
+            
+            # ВРЕМЕННЫЙ ДЕБАГ - логируем ответ
+            if DEBUG_GEMINI and request_file:
+                log_gemini_response(
+                    response=response_text,
+                    request_filepath=request_file,
+                    success=True
+                )
+            
+            return response_text
             
         except Exception as e:
             print(f"❌ Ошибка получения AI ответа: {e}")
+            
+            # ВРЕМЕННЫЙ ДЕБАГ - логируем ошибку
+            if DEBUG_GEMINI and request_file:
+                log_gemini_response(
+                    response="",
+                    request_filepath=request_file,
+                    success=False,
+                    error_message=str(e)
+                )
+            
             return f"Извините, произошла ошибка при обработке вашего сообщения. Попробуйте позже."
 
 

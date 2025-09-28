@@ -10,6 +10,15 @@ from google.oauth2 import service_account
 
 from config.prompts import PromptManager
 
+# ВРЕМЕННЫЙ ДЕБАГ - можно удалить после отладки
+try:
+    from debug_gemini_logger import log_gemini_request, log_gemini_response
+    DEBUG_GEMINI = True
+except ImportError:
+    DEBUG_GEMINI = False
+    def log_gemini_request(*args, **kwargs): return ""
+    def log_gemini_response(*args, **kwargs): return ""
+
 
 class DocumentParserService:
     """Service for parsing company information from text using Gemini AI"""
@@ -68,6 +77,16 @@ class DocumentParserService:
             fields_list = ", ".join(self.required_fields)
             prompt = self.prompt_manager.get_company_info_extraction_prompt(fields_list, text)
             
+            # ВРЕМЕННЫЙ ДЕБАГ - логируем запрос
+            request_file = ""
+            if DEBUG_GEMINI:
+                request_file = log_gemini_request(
+                    prompt=prompt,
+                    service_name="DocumentParserService",
+                    user_id=None,
+                    additional_info={"text_length": len(text), "required_fields": self.required_fields}
+                )
+            
             # Generate response using Gemini
             response = await asyncio.get_event_loop().run_in_executor(
                 None,
@@ -76,6 +95,14 @@ class DocumentParserService:
             
             # Parse the JSON response
             response_text = response.text.strip()
+            
+            # ВРЕМЕННЫЙ ДЕБАГ - логируем ответ
+            if DEBUG_GEMINI and request_file:
+                log_gemini_response(
+                    response=response_text,
+                    request_filepath=request_file,
+                    success=True
+                )
             
             # Try to extract JSON from the response
             json_start = response_text.find('{')
@@ -99,11 +126,31 @@ class DocumentParserService:
         except json.JSONDecodeError as e:
             print(f"❌ Ошибка парсинга JSON от Gemini: {e}")
             print(f"Ответ Gemini: {response_text}")
+            
+            # ВРЕМЕННЫЙ ДЕБАГ - логируем ошибку парсинга
+            if DEBUG_GEMINI and request_file:
+                log_gemini_response(
+                    response=response_text,
+                    request_filepath=request_file,
+                    success=False,
+                    error_message=f"JSON Decode Error: {e}"
+                )
+            
             # Return empty data with null values
             return {field: None for field in self.required_fields}
             
         except Exception as e:
             print(f"❌ Ошибка при анализе реквизитов: {e}")
+            
+            # ВРЕМЕННЫЙ ДЕБАГ - логируем ошибку
+            if DEBUG_GEMINI and request_file:
+                log_gemini_response(
+                    response="",
+                    request_filepath=request_file,
+                    success=False,
+                    error_message=str(e)
+                )
+            
             # Return empty data with null values
             return {field: None for field in self.required_fields}
     

@@ -19,6 +19,15 @@ from docx.oxml.shared import qn
 
 from config.prompts import PromptManager
 
+# ВРЕМЕННЫЙ ДЕБАГ - можно удалить после отладки
+try:
+    from debug_gemini_logger import log_gemini_request, log_gemini_response
+    DEBUG_GEMINI = True
+except ImportError:
+    DEBUG_GEMINI = False
+    def log_gemini_request(*args, **kwargs): return ""
+    def log_gemini_response(*args, **kwargs): return ""
+
 logger = logging.getLogger(__name__)
 
 
@@ -117,6 +126,7 @@ class TemplateProcessorService:
     def _index_runs_and_build_map(self, doc_object: Document) -> Tuple[str, Dict[str, any]]:
         """
         Create detailed indexing of document at run level for precise analysis.
+        Now supports proper table processing with Markdown formatting.
         
         Args:
             doc_object: python-docx Document object
@@ -132,43 +142,86 @@ class TemplateProcessorService:
             coords_dictionary = {}
             run_counter = 0
             
-            # Process all paragraphs
-            for paragraph in doc_object.paragraphs:
-                for run in paragraph.runs:
-                    # Generate unique ID for this run
-                    run_id = f"run-{run_counter}"
+            # Process document body elements in order (paragraphs and tables)
+            for element in doc_object._body._body:
+                if element.tag.endswith('p'):  # Paragraph
+                    # Process paragraph
+                    paragraph = None
+                    for p in doc_object.paragraphs:
+                        if p._element == element:
+                            paragraph = p
+                            break
                     
-                    # Add run to coordinates dictionary (save direct reference to object)
-                    coords_dictionary[run_id] = run
-                    
-                    # Add run to map for Gemini
-                    map_for_gemini += f"[{run_id}]{run.text}"
-                    
-                    # Increment counter
-                    run_counter += 1
-                
-                # Add newline after each paragraph to preserve structure
-                map_for_gemini += "\n"
-            
-            # Process all tables
-            for table in doc_object.tables:
-                for row in table.rows:
-                    for cell in row.cells:
-                        for paragraph in cell.paragraphs:
-                            for run in paragraph.runs:
-                                # Generate unique ID for this run
-                                run_id = f"run-{run_counter}"
-                                
-                                # Add run to coordinates dictionary
-                                coords_dictionary[run_id] = run
-                                
-                                # Add run to map for Gemini
-                                map_for_gemini += f"[{run_id}]{run.text}"
-                                
-                                # Increment counter
-                                run_counter += 1
+                    if paragraph:
+                        for run in paragraph.runs:
+                            # Generate unique ID for this run
+                            run_id = f"run-{run_counter}"
                             
-                            # Add newline after each paragraph in table cells
+                            # Add run to coordinates dictionary (save direct reference to object)
+                            coords_dictionary[run_id] = run
+                            
+                            # Add run to map for Gemini
+                            map_for_gemini += f"[{run_id}]{run.text}"
+                            
+                            # Increment counter
+                            run_counter += 1
+                        
+                        # Add newline after each paragraph to preserve structure
+                        map_for_gemini += "\n"
+                
+                elif element.tag.endswith('tbl'):  # Table
+                    # Process table
+                    table = None
+                    for t in doc_object.tables:
+                        if t._element == element:
+                            table = t
+                            break
+                    
+                    if table:
+                        # Build matrix of runs for this table
+                        table_matrix = []
+                        
+                        for row in table.rows:
+                            row_runs = []
+                            for cell in row.cells:
+                                cell_runs = []
+                                for paragraph in cell.paragraphs:
+                                    for run in paragraph.runs:
+                                        # Generate unique ID for this run
+                                        run_id = f"run-{run_counter}"
+                                        
+                                        # Add run to coordinates dictionary
+                                        coords_dictionary[run_id] = run
+                                        
+                                        # Add run to cell runs list
+                                        cell_runs.append(f"[{run_id}]{run.text}")
+                                        
+                                        # Increment counter
+                                        run_counter += 1
+                                
+                                # Join all runs in this cell with <br> for line breaks
+                                cell_text = "<br>".join(cell_runs)
+                                row_runs.append(cell_text)
+                            
+                            table_matrix.append(row_runs)
+                        
+                        # Generate Markdown table representation
+                        if table_matrix:
+                            # Add table header
+                            if len(table_matrix) > 0:
+                                header_row = "| " + " | ".join(table_matrix[0]) + " |"
+                                map_for_gemini += header_row + "\n"
+                                
+                                # Add separator row
+                                separator_row = "| " + " | ".join([":---"] * len(table_matrix[0])) + " |"
+                                map_for_gemini += separator_row + "\n"
+                                
+                                # Add data rows
+                                for row in table_matrix[1:]:
+                                    data_row = "| " + " | ".join(row) + " |"
+                                    map_for_gemini += data_row + "\n"
+                            
+                            # Add newline after table
                             map_for_gemini += "\n"
             
             print(f"📊 Индексация: {len(coords_dictionary)} run-ов, {len(map_for_gemini)} символов")
@@ -432,21 +485,60 @@ class TemplateProcessorService:
             Response from Gemini
         """
         try:
+            # ВРЕМЕННЫЙ ДЕБАГ - логируем запрос
+            request_file = ""
+            if DEBUG_GEMINI:
+                request_file = log_gemini_request(
+                    prompt=prompt,
+                    service_name="TemplateProcessorService",
+                    user_id=None,
+                    additional_info={"prompt_type": "document_analysis"}
+                )
+            
             # Generate content using Gemini
             response = self.model.generate_content(prompt)
             
             if response.text:
                 print(f"✅ Получен ответ от Gemini: {len(response.text)} символов")
                 logger.info("Received response from Gemini")
+                
+                # ВРЕМЕННЫЙ ДЕБАГ - логируем ответ
+                if DEBUG_GEMINI and request_file:
+                    log_gemini_response(
+                        response=response.text,
+                        request_filepath=request_file,
+                        success=True
+                    )
+                
                 return response.text
             else:
                 print(f"❌ Пустой ответ от Gemini")
                 logger.error("Empty response from Gemini")
+                
+                # ВРЕМЕННЫЙ ДЕБАГ - логируем пустой ответ
+                if DEBUG_GEMINI and request_file:
+                    log_gemini_response(
+                        response="",
+                        request_filepath=request_file,
+                        success=False,
+                        error_message="Empty response from Gemini"
+                    )
+                
                 return ""
                 
         except Exception as e:
             print(f"❌ Ошибка Gemini: {e}")
             logger.error(f"Error sending request to Gemini: {e}")
+            
+            # ВРЕМЕННЫЙ ДЕБАГ - логируем ошибку
+            if DEBUG_GEMINI and request_file:
+                log_gemini_response(
+                    response="",
+                    request_filepath=request_file,
+                    success=False,
+                    error_message=str(e)
+                )
+            
             return ""
     
     # Old methods removed - using new surgical approach with edits plan

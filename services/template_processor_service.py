@@ -8,6 +8,8 @@ import logging
 import os
 import re
 import tempfile
+import io
+import copy
 from typing import Dict, List, Tuple
 from io import BytesIO
 
@@ -67,6 +69,176 @@ class TemplateProcessorService:
             logger.error(f"Failed to initialize Gemini AI service: {e}")
             raise
     
+    def _index_runs_and_build_map(self, doc_object: Document) -> Tuple[str, Dict[str, any]]:
+        """
+        Create detailed indexing of document at run level for precise analysis.
+        
+        Args:
+            doc_object: python-docx Document object
+            
+        Returns:
+            Tuple of (map_for_gemini, coords_dictionary)
+            - map_for_gemini: Text map of document with run IDs for AI analysis
+            - coords_dictionary: Python dictionary for quick navigation by run IDs
+        """
+        try:
+            print(f"🔍 [INDEX] Начинаю детальную индексацию документа на уровне run-ов...")
+            
+            # Initialize variables
+            map_for_gemini = ""
+            coords_dictionary = {}
+            run_counter = 0
+            
+            # Process all paragraphs
+            for paragraph in doc_object.paragraphs:
+                for run in paragraph.runs:
+                    # Generate unique ID for this run
+                    run_id = f"run-{run_counter}"
+                    
+                    # Add run to coordinates dictionary (save direct reference to object)
+                    coords_dictionary[run_id] = run
+                    
+                    # Add run to map for Gemini
+                    map_for_gemini += f"[{run_id}]{run.text}"
+                    
+                    # Increment counter
+                    run_counter += 1
+                
+                # Add newline after each paragraph to preserve structure
+                map_for_gemini += "\n"
+            
+            # Process all tables
+            for table in doc_object.tables:
+                for row in table.rows:
+                    for cell in row.cells:
+                        for paragraph in cell.paragraphs:
+                            for run in paragraph.runs:
+                                # Generate unique ID for this run
+                                run_id = f"run-{run_counter}"
+                                
+                                # Add run to coordinates dictionary
+                                coords_dictionary[run_id] = run
+                                
+                                # Add run to map for Gemini
+                                map_for_gemini += f"[{run_id}]{run.text}"
+                                
+                                # Increment counter
+                                run_counter += 1
+                            
+                            # Add newline after each paragraph in table cells
+                            map_for_gemini += "\n"
+            
+            print(f"✅ [INDEX] Индексация завершена:")
+            print(f"   - Создано {len(coords_dictionary)} run-ов")
+            print(f"   - Размер карты для Gemini: {len(map_for_gemini)} символов")
+            print(f"   - Первые 200 символов карты: {map_for_gemini[:200]}...")
+            
+            return map_for_gemini, coords_dictionary
+            
+        except Exception as e:
+            print(f"❌ [INDEX] Ошибка при индексации документа: {e}")
+            logger.error(f"Error indexing document runs: {e}")
+            return "", {}
+    
+    def _apply_edits_to_runs(self, doc_object: Document, edits_plan: List[Dict[str, str]], coords_dictionary: Dict[str, any]) -> Tuple[bytes, bytes]:
+        """
+        Apply surgical edits to document runs based on Gemini's edits plan.
+        This is the heart of our "surgical" module for precise run-level modifications.
+        
+        Args:
+            doc_object: Original Document object
+            edits_plan: List of edit plans from Gemini with run_id and field_name
+            coords_dictionary: Dictionary mapping run_id to run objects
+            
+        Returns:
+            Tuple of (preview_bytes, smart_template_bytes)
+        """
+        try:
+            print(f"🔧 [SURGERY] Начинаю хирургию run-ов...")
+            print(f"🔧 [SURGERY] Получено {len(edits_plan)} правок для применения")
+            
+            # Step 1: Create deep copies of the original document
+            print(f"📋 [SURGERY] Создаю глубокие копии документа...")
+            preview_doc = copy.deepcopy(doc_object)
+            smart_template_doc = copy.deepcopy(doc_object)
+            print(f"✅ [SURGERY] Созданы две независимые копии документа")
+            
+            # Step 2: Rebuild coordinates dictionary for both copies
+            print(f"🔍 [SURGERY] Перестраиваю словари координат для копий...")
+            _, preview_coords_dictionary = self._index_runs_and_build_map(preview_doc)
+            _, smart_template_coords_dictionary = self._index_runs_and_build_map(smart_template_doc)
+            print(f"✅ [SURGERY] Словари координат перестроены:")
+            print(f"   - Preview: {len(preview_coords_dictionary)} run-ов")
+            print(f"   - Smart template: {len(smart_template_coords_dictionary)} run-ов")
+            
+            # Step 3: Apply edits to both documents
+            print(f"🔧 [SURGERY] Применяю правки к документам...")
+            for i, edit in enumerate(edits_plan):
+                run_id = edit.get('run_id')
+                field_name = edit.get('field_name')
+                
+                print(f"🔧 [SURGERY] Правка {i+1}/{len(edits_plan)}: run_id='{run_id}', field_name='{field_name}'")
+                
+                if not run_id or not field_name:
+                    print(f"⚠️ [SURGERY] Пропускаю некорректную правку: {edit}")
+                    continue
+                
+                # Find target runs in both documents
+                preview_run = preview_coords_dictionary.get(run_id)
+                smart_template_run = smart_template_coords_dictionary.get(run_id)
+                
+                if not preview_run:
+                    print(f"⚠️ [SURGERY] Run {run_id} не найден в preview документе")
+                    continue
+                    
+                if not smart_template_run:
+                    print(f"⚠️ [SURGERY] Run {run_id} не найден в smart template документе")
+                    continue
+                
+                print(f"🔍 [SURGERY] Найдены целевые run-ы:")
+                print(f"   - Preview run text: '{preview_run.text[:50]}...'")
+                print(f"   - Smart template run text: '{smart_template_run.text[:50]}...'")
+                
+                # Apply edit to preview document
+                print(f"🎨 [SURGERY] Применяю правку к preview документу...")
+                preview_run.text = ''  # Clear existing text
+                preview_run.add_text(f"[{field_name}]")  # Add new marker text
+                preview_run.font.color.rgb = RGBColor(255, 0, 0)  # Red color
+                preview_run.bold = True  # Bold formatting
+                print(f"✅ [SURGERY] Preview run обновлен: '{preview_run.text}' (красный, жирный)")
+                
+                # Apply edit to smart template document
+                print(f"🔧 [SURGERY] Применяю правку к smart template документу...")
+                smart_template_run.text = f"{{{{{field_name}}}}}"  # Add smart placeholder
+                print(f"✅ [SURGERY] Smart template run обновлен: '{smart_template_run.text}'")
+            
+            print(f"✅ [SURGERY] Все правки применены к документам")
+            
+            # Step 4: Save both documents to bytes
+            print(f"💾 [SURGERY] Сохраняю документы в байты...")
+            
+            # Save preview document
+            preview_stream = BytesIO()
+            preview_doc.save(preview_stream)
+            preview_bytes = preview_stream.getvalue()
+            print(f"✅ [SURGERY] Preview документ сохранен: {len(preview_bytes)} байт")
+            
+            # Save smart template document
+            smart_template_stream = BytesIO()
+            smart_template_doc.save(smart_template_stream)
+            smart_template_bytes = smart_template_stream.getvalue()
+            print(f"✅ [SURGERY] Smart template документ сохранен: {len(smart_template_bytes)} байт")
+            
+            print(f"🎉 [SURGERY] Хирургия run-ов завершена успешно!")
+            return preview_bytes, smart_template_bytes
+            
+        except Exception as e:
+            print(f"❌ [SURGERY] Ошибка при хирургии run-ов: {e}")
+            logger.error(f"Error in surgical edits application: {e}")
+            import traceback
+            traceback.print_exc()
+            return b'', b''
+    
     async def analyze_and_prepare_templates(self, file_bytes: bytes, file_format: str = '.docx', debug_callback=None) -> Tuple[bytes, bytes]:
         """
         Analyze document and prepare two files: preview for user and smart template for storage.
@@ -81,68 +253,68 @@ class TemplateProcessorService:
         try:
             print(f"📄 [ANALYZE] Начинаю анализ документа размером {len(file_bytes)} байт")
             
-            # Step 1: Extract text from document
+            # Step 1: Load document using python-docx for precise run-level analysis
             if file_format == '.docx':
-                print(f"📖 [ANALYZE] Извлекаю текст из DOCX файла...")
-                document_text = self._extract_text_from_docx(file_bytes)
+                print(f"📖 [ANALYZE] Загружаю DOCX документ для детального анализа...")
+                doc_object = Document(io.BytesIO(file_bytes))
             elif file_format == '.doc':
-                print(f"📖 [ANALYZE] Извлекаю текст из DOC файла...")
-                document_text = self._extract_text_from_doc(file_bytes)
+                print(f"❌ [ANALYZE] DOC формат не поддерживается для детального анализа")
+                return b'', b''
             else:
                 print(f"❌ [ANALYZE] Неподдерживаемый формат файла: {file_format}")
                 return b'', b''
             
-            if not document_text.strip():
-                print(f"⚠️ [ANALYZE] Документ пустой или не удалось прочитать")
-                logger.warning("Document appears to be empty or could not be read")
+            # Step 2: Create detailed run-level indexing
+            print(f"🔍 [ANALYZE] Создаю детальную индексацию на уровне run-ов...")
+            map_for_gemini, coords_dictionary = self._index_runs_and_build_map(doc_object)
+            
+            if not map_for_gemini.strip():
+                print(f"⚠️ [ANALYZE] Документ пустой или не удалось проиндексировать")
+                logger.warning("Document appears to be empty or could not be indexed")
                 return b'', b''
             
-            print(f"✅ [ANALYZE] Извлечено {len(document_text)} символов текста")
+            print(f"✅ [ANALYZE] Индексация завершена:")
+            print(f"   - Создано {len(coords_dictionary)} run-ов")
+            print(f"   - Размер карты для Gemini: {len(map_for_gemini)} символов")
+            print(f"   - Первые 500 символов карты: {map_for_gemini[:500]}...")
             
-            # Step 2: Create simple prompt for Gemini
-            prompt = self._create_simple_prompt(document_text)
+            # Step 3: Call Gemini for document analysis
+            print(f"🤖 [GEMINI] Отправляю карту документа в Gemini для анализа...")
+            prompt = self.prompt_manager.get_document_analysis_prompt(map_for_gemini)
+            print(f"🔍 [GEMINI] Создан промпт длиной {len(prompt)} символов")
             
-            print(f"🤖 [ANALYZE] Отправляю запрос в Gemini...")
-            logger.info("Sending document analysis request to Gemini...")
-            response = await self._send_gemini_request(prompt, debug_callback)
+            # Send request to Gemini
+            gemini_response = await self._send_gemini_request(prompt, debug_callback)
             
-            if not response:
-                print(f"❌ [ANALYZE] Пустой ответ от Gemini")
+            if not gemini_response:
+                print(f"❌ [GEMINI] Пустой ответ от Gemini")
+                logger.error("Empty response from Gemini")
                 return b'', b''
             
-            print(f"✅ [ANALYZE] Получен ответ от Gemini: {len(response)} символов")
+            # Parse Gemini response to get edits plan
+            print(f"🔍 [GEMINI] Парсинг ответа от Gemini...")
+            edits_plan = self._parse_gemini_edits_plan(gemini_response)
             
-            # Step 3: Parse JSON response
-            print(f"🔍 [ANALYZE] Начинаю парсинг ответа Gemini...")
-            replacements = self._parse_gemini_response(response)
-            
-            if not replacements:
-                print(f"❌ [ANALYZE] Не удалось распарсить ответ Gemini")
-                print(f"❌ [ANALYZE] Ответ Gemini: {response[:300]}...")
+            if not edits_plan:
+                print(f"❌ [GEMINI] Не удалось распарсить план правок от Gemini")
+                logger.error("Failed to parse edits plan from Gemini response")
                 return b'', b''
             
-            print(f"✅ [ANALYZE] Найдено {len(replacements)} полей для замены")
+            print(f"✅ [GEMINI] Получен план правок от Gemini: {len(edits_plan)} элементов")
+            logger.debug(f"Получен план правок от Gemini: {edits_plan}")
             
-            # Step 4: Create preview file with red markers
-            print(f"🔧 [ANALYZE] Создаю файл предпросмотра...")
-            preview_bytes = self._create_preview_file(file_bytes, replacements)
+            # Step 4: Apply surgical edits to document
+            print(f"🔧 [ANALYZE] Применяю хирургические правки к документу...")
+            preview_bytes, smart_template_bytes = self._apply_edits_to_runs(doc_object, edits_plan, coords_dictionary)
             
-            if not preview_bytes:
-                print(f"❌ [ANALYZE] Не удалось создать файл предпросмотра")
+            if not preview_bytes or not smart_template_bytes:
+                print(f"❌ [ANALYZE] Ошибка при применении хирургических правок")
+                logger.error("Failed to apply surgical edits to document")
                 return b'', b''
             
-            # Step 5: Create smart template with placeholders
-            print(f"🔧 [ANALYZE] Создаю умный шаблон...")
-            smart_template_bytes = self._create_smart_template(file_bytes, replacements)
-            
-            if not smart_template_bytes:
-                print(f"❌ [ANALYZE] Не удалось создать умный шаблон")
-                return b'', b''
-            
-            print(f"✅ [ANALYZE] Анализ завершен. Созданы файлы:")
-            print(f"   - Предпросмотр: {len(preview_bytes)} байт")
-            print(f"   - Умный шаблон: {len(smart_template_bytes)} байт")
-            logger.info(f"Document analysis completed. Preview: {len(preview_bytes)} bytes, Smart template: {len(smart_template_bytes)} bytes")
+            print(f"✅ [ANALYZE] Хирургические правки применены успешно:")
+            print(f"   - Preview файл: {len(preview_bytes)} байт")
+            print(f"   - Smart template файл: {len(smart_template_bytes)} байт")
             
             return preview_bytes, smart_template_bytes
             
@@ -628,6 +800,115 @@ class TemplateProcessorService:
             print(f"❌ [REPLACE] Ошибка при применении замены: {e}")
             logger.error(f"Error applying replacement to paragraph: {e}")
     
+    def _parse_gemini_edits_plan(self, response: str) -> List[Dict[str, str]]:
+        """
+        Parse JSON response from Gemini containing edits plan.
+
+        Args:
+            response: Raw response from Gemini
+
+        Returns:
+            List of edit plan dictionaries with run_id and field_name
+        """
+        try:
+            print(f"🔍 [PARSE] Начинаю парсинг плана правок от Gemini...")
+            print(f"🔍 [PARSE] Длина ответа: {len(response)} символов")
+            print(f"🔍 [PARSE] Первые 200 символов ответа: {response[:200]}")
+            
+            # Clean the response (remove markdown formatting if present)
+            cleaned_response = response.strip()
+            
+            # Remove markdown code blocks
+            if cleaned_response.startswith('```json'):
+                cleaned_response = cleaned_response[7:]
+            elif cleaned_response.startswith('```'):
+                cleaned_response = cleaned_response[3:]
+            
+            if cleaned_response.endswith('```'):
+                cleaned_response = cleaned_response[:-3]
+            
+            cleaned_response = cleaned_response.strip()
+            
+            print(f"🔍 [PARSE] Очищенный ответ: {cleaned_response[:100]}...")
+            
+            # Try multiple parsing strategies
+            edits_plan = None
+            
+            # Strategy 1: Try to find JSON array in the response
+            json_start = cleaned_response.find('[')
+            json_end = cleaned_response.rfind(']') + 1
+            
+            if json_start != -1 and json_end > json_start:
+                json_text = cleaned_response[json_start:json_end]
+                print(f"🔍 [PARSE] Найден JSON массив: позиция {json_start} - {json_end}")
+                print(f"🔍 [PARSE] JSON текст: {json_text[:200]}...")
+                try:
+                    edits_plan = json.loads(json_text)
+                    print(f"✅ [PARSE] Успешно распарсен JSON массив")
+                except json.JSONDecodeError as e:
+                    print(f"❌ [PARSE] Ошибка парсинга JSON массива: {e}")
+                    edits_plan = None
+            
+            # Strategy 2: Try to parse the whole response
+            if edits_plan is None:
+                try:
+                    edits_plan = json.loads(cleaned_response)
+                    print(f"✅ [PARSE] Успешно распарсен весь ответ")
+                except json.JSONDecodeError as e:
+                    print(f"❌ [PARSE] Ошибка парсинга всего ответа: {e}")
+                    edits_plan = None
+            
+            # Strategy 3: Try to extract JSON using regex
+            if edits_plan is None:
+                json_pattern = r'\[.*?\]'
+                json_matches = re.findall(json_pattern, cleaned_response, re.DOTALL)
+                if json_matches:
+                    for json_match in json_matches:
+                        try:
+                            edits_plan = json.loads(json_match)
+                            print(f"✅ [PARSE] Успешно распарсен JSON через regex")
+                            break
+                        except json.JSONDecodeError:
+                            continue
+            
+            if edits_plan is None:
+                print(f"❌ [PARSE] Не удалось распарсить JSON из ответа")
+                logger.error("Could not parse JSON from Gemini response")
+                return []
+
+            if not isinstance(edits_plan, list):
+                logger.error("Gemini response is not a list")
+                print(f"❌ [PARSE] Ответ не является массивом: {type(edits_plan)}")
+                return []
+
+            # Validate that each item has required fields
+            valid_edits = []
+            for i, item in enumerate(edits_plan):
+                print(f"🔍 [PARSE] Проверяю элемент {i}: {item}")
+                if isinstance(item, dict) and 'run_id' in item and 'field_name' in item:
+                    valid_edits.append(item)
+                    print(f"✅ [PARSE] Найдено поле: {item['run_id']} -> '{item['field_name']}'")
+                else:
+                    print(f"⚠️ [PARSE] Некорректный формат элемента: {item}")
+            
+            print(f"🔍 [PARSE] Итоговый список валидных правок:")
+            for i, edit in enumerate(valid_edits):
+                print(f"🔍 [PARSE] Правка {i+1}: run_id='{edit['run_id']}', field_name='{edit['field_name']}'")
+            
+            logger.info(f"Successfully parsed {len(valid_edits)} valid edits from Gemini response")
+            return valid_edits
+
+        except json.JSONDecodeError as e:
+            logger.error(f"Error parsing JSON response from Gemini: {e}")
+            logger.error(f"Raw response: {response}")
+            print(f"❌ [PARSE] Ошибка парсинга JSON: {e}")
+            print(f"❌ [PARSE] Исходный ответ: {response[:500]}...")
+            return []
+        except Exception as e:
+            logger.error(f"Unexpected error parsing Gemini response: {e}")
+            print(f"❌ [PARSE] Неожиданная ошибка: {e}")
+            return []
+
     def _parse_gemini_response(self, response: str) -> List[Dict[str, str]]:
         """
         Parse JSON response from Gemini.

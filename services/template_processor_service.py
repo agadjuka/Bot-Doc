@@ -254,16 +254,22 @@ class TemplateProcessorService:
                     continue
                 
                 # Apply edits to both documents
-                # Preview: replace with [field_name] and apply red bold style
-                preview_run.text = f"[{field_name}]"
-                # Remove highlighting first
-                self._remove_highlighting(preview_run)
-                # Apply red bold style
-                preview_run.font.color.rgb = RGBColor(255, 0, 0)
-                preview_run.bold = True
-                
-                # Smart template: replace with {{field_name}}
-                smart_template_run.text = f"{{{{field_name}}}}"
+                if field_name == "":
+                    # Clear the run (empty string)
+                    preview_run.text = ""
+                    smart_template_run.text = ""
+                    print(f"✅ [APPLY] Очищен run {run_id}")
+                else:
+                    # Preview: replace with [field_name] and apply red bold style
+                    preview_run.text = f"[{field_name}]"
+                    # Remove highlighting first
+                    self._remove_highlighting(preview_run)
+                    # Apply red bold style
+                    preview_run.font.color.rgb = RGBColor(255, 0, 0)
+                    preview_run.bold = True
+                    
+                    # Smart template: replace with {{field_name}}
+                    smart_template_run.text = f"{{{{field_name}}}}"
                 
                 print(f"✅ [APPLY] Применена правка {run_id}: '{field_name}'")
             

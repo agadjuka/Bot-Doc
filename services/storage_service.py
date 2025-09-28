@@ -70,11 +70,10 @@ class StorageService:
             True if upload successful, False otherwise
         """
         try:
-            print(f"☁️ [STORAGE] Начинаю загрузку файла в Cloud Storage: {destination_path}")
-            print(f"📊 [STORAGE] Размер файла: {len(file_bytes)} байт")
+            print(f"☁️ Загружаю в Cloud Storage: {destination_path}")
             
             if not self._bucket:
-                print(f"❌ [STORAGE] Bucket не инициализирован")
+                print(f"❌ Bucket не инициализирован")
                 logger.error("Storage bucket not initialized")
                 return False
             
@@ -84,16 +83,15 @@ class StorageService:
             # Set content type
             blob.content_type = content_type
             
-            print(f"📤 [STORAGE] Загружаю файл в bucket '{self.bucket_name}'...")
             # Upload file
             blob.upload_from_string(file_bytes, content_type=content_type)
             
-            print(f"✅ [STORAGE] Файл успешно загружен: {destination_path}")
+            print(f"✅ Файл загружен: {destination_path}")
             logger.info(f"File uploaded successfully to: {destination_path}")
             return True
             
         except Exception as e:
-            print(f"❌ [STORAGE] Ошибка при загрузке файла {destination_path}: {e}")
+            print(f"❌ Ошибка загрузки: {e}")
             logger.error(f"Error uploading file to {destination_path}: {e}")
             return False
     

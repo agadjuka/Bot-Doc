@@ -46,7 +46,7 @@ def setup_environment():
                         if line.strip().startswith('BOT_TOKEN='):
                             bot_token = line.strip().split('=', 1)[1]
                             os.environ["BOT_TOKEN"] = bot_token
-                            print(f"✅ BOT_TOKEN загружен из файла: {bot_token[:10]}...")
+                            print(f"✅ BOT_TOKEN загружен")
                             break
         except Exception as e:
             print(f"❌ Ошибка при чтении файла env.local: {e}")
@@ -57,7 +57,7 @@ def setup_environment():
         print(f"💡 Путь к файлу: {os.path.join(os.path.dirname(__file__), 'env.local')}")
         return False
     else:
-        print(f"✅ BOT_TOKEN найден: {bot_token[:10]}...")
+        print(f"✅ BOT_TOKEN найден")
     
     # Путь к файлу с учетными данными
     credentials_path = os.path.join(os.path.dirname(__file__), "bot-doc-473208-706e6adceee1.json")
@@ -187,8 +187,8 @@ def main() -> None:
     ai_service = ai_factory.get_default_service()
     analysis_service = ReceiptAnalysisServiceCompat(ai_service, ai_factory)
     
-    print(f"🤖 AI Service инициализирован с моделью: {ai_service.get_current_model_info()['name']}")
-    print(f"🏭 AIServiceFactory готова для переключения между моделями: {list(ai_factory._services.keys())}")
+    print(f"🤖 AI Service инициализирован: {ai_service.get_current_model_info()['name']}")
+    print(f"🏭 AIServiceFactory готова: {list(ai_factory._services.keys())}")
     
     # КРИТИЧЕСКИ ВАЖНО: Инициализируем LocaleManager ПЕРЕД созданием handlers
     initialize_locale_manager(db)

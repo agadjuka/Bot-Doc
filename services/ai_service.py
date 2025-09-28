@@ -49,7 +49,7 @@ class AIService:
             model_name = self.config.get_model_name(self.model_type)
             self._model = genai.GenerativeModel(model_name)
             
-            print(f"✅ Gemini AI инициализирован с моделью: {model_name} (через Google Cloud аутентификацию)")
+            print(f"✅ Gemini AI инициализирован: {model_name}")
             
         except Exception as e:
             print(f"❌ Ошибка инициализации Gemini AI: {e}")
@@ -122,7 +122,7 @@ class AIServiceFactory:
                 self.prompt_manager, 
                 model_type
             )
-            print(f"🏭 Создан новый AI сервис для модели: {model_type.upper()}")
+            print(f"🏭 Создан AI сервис: {model_type.upper()}")
         
         return self._services[model_type]
     
@@ -133,4 +133,4 @@ class AIServiceFactory:
     def close_all_services(self):
         """Close all services"""
         self._services.clear()
-        print("🔒 Все AI сервисы закрыты")
+        print("🔒 AI сервисы закрыты")

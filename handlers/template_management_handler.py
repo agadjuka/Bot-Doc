@@ -111,16 +111,15 @@ class TemplateManagementHandler:
             Conversation state
         """
         try:
-            print(f"🔍 [DEBUG] template_management_handler.handle_template_upload вызван")
             document = update.message.document
             user_id = update.effective_user.id
             
-            print(f"📄 [TEMPLATE] Пользователь {user_id} загрузил файл: {document.file_name} ({document.file_size} байт)")
+            print(f"📄 Загружен файл: {document.file_name} ({document.file_size} байт)")
             
             # Check file extension
             file_name_lower = document.file_name.lower()
             if not (file_name_lower.endswith('.docx') or file_name_lower.endswith('.doc')):
-                print(f"❌ [TEMPLATE] Неверный формат файла: {document.file_name}")
+                print(f"❌ Неверный формат файла: {document.file_name}")
                 await update.message.reply_text(
                     "❌ **Ошибка формата файла**\n\n"
                     "Пожалуйста, отправьте файл в формате .docx или .doc",
@@ -138,21 +137,17 @@ class TemplateManagementHandler:
                 parse_mode='Markdown'
             )
             
-            print(f"📥 [TEMPLATE] Скачиваю файл {document.file_name}...")
             # Download file
             file = await context.bot.get_file(document.file_id)
             file_bytes = await file.download_as_bytearray()
             file_bytes = bytes(file_bytes)
-            print(f"✅ [TEMPLATE] Файл скачан успешно: {len(file_bytes)} байт")
-            
-            print(f"🤖 [TEMPLATE] Отправляю файл в Gemini для анализа...")
+            print(f"📥 Файл скачан: {len(file_bytes)} байт")
             
             # Analyze document using new two-file method
             preview_bytes, smart_template_bytes = await self.template_processor.analyze_and_prepare_templates(file_bytes, file_format)
-            print(f"✅ [TEMPLATE] Анализ завершен")
             
             if not preview_bytes or not smart_template_bytes:
-                print(f"❌ [TEMPLATE] Анализ не удался")
+                print(f"❌ Анализ не удался")
                 await analysis_msg.edit_text(
                     "❌ **Анализ не удался**\n\n"
                     "Не удалось проанализировать документ. "
@@ -161,9 +156,7 @@ class TemplateManagementHandler:
                 )
                 return self.config.AWAITING_TEMPLATE_UPLOAD
             
-            print(f"✅ [TEMPLATE] Созданы файлы:")
-            print(f"   - Предпросмотр: {len(preview_bytes)} байт")
-            print(f"   - Умный шаблон: {len(smart_template_bytes)} байт")
+            print(f"✅ Анализ завершен: preview {len(preview_bytes)} байт, template {len(smart_template_bytes)} байт")
             
             # Store both files in FSM storage
             context.user_data['preview_bytes'] = preview_bytes
@@ -171,45 +164,9 @@ class TemplateManagementHandler:
             context.user_data['original_file_name'] = document.file_name
             
             # Send the preview file as a document immediately
-            print(f"📄 [TEMPLATE] Отправляю файл предпросмотра пользователю...")
-            print(f"🔍 [DEBUG] Preview bytes размер: {len(preview_bytes)} байт")
-            print(f"🔍 [DEBUG] Smart template bytes размер: {len(smart_template_bytes)} байт")
-            print(f"🔍 [DEBUG] Исходный файл размер: {len(file_bytes)} байт")
-            
-            # Проверяем, что preview_bytes не пустой и отличается от исходного файла
-            if len(preview_bytes) == len(file_bytes):
-                print(f"⚠️ [DEBUG] Preview bytes имеет тот же размер, что и исходный файл - возможно, изменения не применились")
-            else:
-                print(f"✅ [DEBUG] Preview bytes отличается от исходного файла по размеру")
-            
-            # КРИТИЧЕСКИ ВАЖНО: Проверяем содержимое preview_bytes перед отправкой
-            print(f"🔍 [DEBUG] Проверяю содержимое preview_bytes перед отправкой...")
-            preview_text_check = ""
-            field_markers_in_bytes = []
-            try:
-                # Создаем временный документ из preview_bytes для проверки
-                from docx import Document
-                import io
-                temp_doc = Document(io.BytesIO(preview_bytes))
-                for paragraph in temp_doc.paragraphs:
-                    for run in paragraph.runs:
-                        preview_text_check += run.text
-                        if '[' in run.text and ']' in run.text:
-                            field_markers_in_bytes.append(run.text)
-                
-                print(f"🔍 [DEBUG] Preview bytes содержит {len(field_markers_in_bytes)} полей: {field_markers_in_bytes}")
-                print(f"🔍 [DEBUG] Preview bytes текст (первые 200 символов): {preview_text_check[:200]}...")
-            except Exception as e:
-                print(f"❌ [ERROR] Ошибка при проверке preview_bytes: {e}")
-                import traceback
-                print(f"❌ [ERROR] Полный traceback: {traceback.format_exc()}")
-            
             from io import BytesIO
             preview_file = BytesIO(preview_bytes)
             preview_file.name = f"preview_{document.file_name}"
-            
-            print(f"🔍 [DEBUG] Создан preview_file с именем: {preview_file.name}")
-            print(f"🔍 [DEBUG] preview_file размер: {len(preview_file.getvalue())} байт")
             
             await analysis_msg.edit_text(
                 "✅ Готово! Я подготовил предпросмотр. Пожалуйста, откройте файл и убедитесь, что я правильно определил поля для заполнения (они выделены красным).\n\n"
@@ -221,14 +178,12 @@ class TemplateManagementHandler:
                 caption="📄 Файл предпросмотра готов"
             )
             
-            print(f"🔍 [DEBUG] Файл отправлен пользователю")
-            print(f"🔍 [DEBUG] Отправленный файл: {preview_file.name}")
-            print(f"🔍 [DEBUG] Размер отправленного файла: {len(preview_file.getvalue())} байт")
+            print(f"📤 Файл предпросмотра отправлен пользователю")
             
             return self.config.AWAITING_TEMPLATE_NAME
             
         except Exception as e:
-            print(f"❌ [TEMPLATE] Ошибка при обработке шаблона: {e}")
+            print(f"❌ Ошибка при обработке шаблона: {e}")
             logger.error(f"Error in handle_template_upload: {e}")
             await update.message.reply_text("❌ Произошла ошибка при обработке файла.")
             return ConversationHandler.END
@@ -248,10 +203,10 @@ class TemplateManagementHandler:
             template_name = update.message.text.strip()
             user_id = update.effective_user.id
             
-            print(f"💾 [TEMPLATE] Пользователь {user_id} ввел имя шаблона: '{template_name}'")
+            print(f"💾 Имя шаблона: '{template_name}'")
             
             if not template_name:
-                print(f"❌ [TEMPLATE] Пустое имя шаблона от пользователя {user_id}")
+                print(f"❌ Пустое имя шаблона")
                 await update.message.reply_text(
                     "❌ **Имя шаблона не может быть пустым**\n\n"
                     "Пожалуйста, введите корректное имя для шаблона.",
@@ -263,7 +218,7 @@ class TemplateManagementHandler:
             smart_template_bytes = context.user_data.get('smart_template_bytes')
             
             if not smart_template_bytes:
-                print(f"❌ [TEMPLATE] Данные умного шаблона потеряны для пользователя {user_id}")
+                print(f"❌ Данные шаблона потеряны")
                 await update.message.reply_text(
                     "❌ **Ошибка данных**\n\n"
                     "Данные шаблона были потеряны. Пожалуйста, начните загрузку заново.",
@@ -274,9 +229,8 @@ class TemplateManagementHandler:
             # Create destination path with original file format
             original_format = context.user_data.get('original_file_format', '.docx')
             destination_path = f"user_{user_id}/{template_name}{original_format}"
-            print(f"📁 [TEMPLATE] Путь для сохранения: {destination_path}")
             
-            print(f"☁️ [TEMPLATE] Загружаю умный шаблон в Cloud Storage...")
+            print(f"☁️ Загружаю в Cloud Storage...")
             # Upload smart template to storage
             upload_success = await self.storage_service.upload_file(
                 smart_template_bytes,
@@ -284,7 +238,7 @@ class TemplateManagementHandler:
             )
             
             if not upload_success:
-                print(f"❌ [TEMPLATE] Ошибка загрузки в Cloud Storage")
+                print(f"❌ Ошибка загрузки в Cloud Storage")
                 await update.message.reply_text(
                     "❌ **Ошибка сохранения**\n\n"
                     "Не удалось сохранить шаблон в облачном хранилище.",
@@ -292,11 +246,10 @@ class TemplateManagementHandler:
                 )
                 return ConversationHandler.END
             
-            print(f"✅ [TEMPLATE] Умный шаблон успешно загружен в Cloud Storage")
+            print(f"✅ Шаблон загружен в Cloud Storage")
             
             # Save to Firestore
             if self.firestore_service:
-                print(f"🔥 [TEMPLATE] Сохраняю метаданные в Firestore...")
                 firestore_success = await self.firestore_service.add_template(
                     user_id=user_id,
                     template_name=template_name,
@@ -305,20 +258,17 @@ class TemplateManagementHandler:
                 )
                 
                 if not firestore_success:
-                    print(f"⚠️ [TEMPLATE] Предупреждение: не удалось сохранить в Firestore")
+                    print(f"⚠️ Не удалось сохранить в Firestore")
                     logger.warning(f"Failed to save template metadata to Firestore for user {user_id}")
                 else:
-                    print(f"✅ [TEMPLATE] Метаданные сохранены в Firestore")
-            else:
-                print(f"⚠️ [TEMPLATE] Firestore сервис недоступен")
+                    print(f"✅ Метаданные сохранены в Firestore")
             
             # Clean up user data
             context.user_data.pop('preview_bytes', None)
             context.user_data.pop('smart_template_bytes', None)
             context.user_data.pop('original_file_name', None)
-            print(f"🧹 [TEMPLATE] Очищены данные пользователя {user_id}")
             
-            print(f"🎉 [TEMPLATE] Шаблон '{template_name}' успешно сохранен для пользователя {user_id}")
+            print(f"🎉 Шаблон '{template_name}' успешно сохранен")
             await update.message.reply_text(
                 f"✅ **Шаблон '{template_name}' успешно сохранен!**\n\n"
                 f"Теперь вы можете использовать этот шаблон для создания документов.",
@@ -328,7 +278,7 @@ class TemplateManagementHandler:
             return ConversationHandler.END
             
         except Exception as e:
-            print(f"❌ [TEMPLATE] Ошибка при сохранении шаблона: {e}")
+            print(f"❌ Ошибка при сохранении шаблона: {e}")
             logger.error(f"Error in handle_template_name_and_save: {e}")
             await update.message.reply_text("❌ Произошла ошибка при сохранении шаблона.")
             return ConversationHandler.END

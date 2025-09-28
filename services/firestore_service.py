@@ -46,14 +46,14 @@ class FirestoreService:
         Returns:
             True if successful, False otherwise
         """
-        print(f"🔥 [FIRESTORE] Начинаю сохранение шаблона '{template_name}' для пользователя {user_id}")
+        print(f"🔥 Сохраняю шаблон '{template_name}' для пользователя {user_id}")
         
         if not self.db:
-            print(f"❌ [FIRESTORE] Firestore недоступен")
+            print(f"❌ Firestore недоступен")
             return False
         
         if not template_name or not file_path:
-            print(f"❌ [FIRESTORE] Имя шаблона и путь к файлу обязательны")
+            print(f"❌ Имя шаблона и путь к файлу обязательны")
             return False
         
         try:
@@ -61,20 +61,17 @@ class FirestoreService:
             user_ref = self.db.collection('users').document(str(user_id))
             
             # Check if user document exists, create if not
-            print(f"👤 [FIRESTORE] Проверяю существование пользователя {user_id}...")
             user_doc = user_ref.get()
             if not user_doc.exists:
-                print(f"👤 [FIRESTORE] Создаю документ пользователя {user_id}")
+                print(f"👤 Создаю пользователя {user_id}")
                 user_ref.set({
                     'created_at': datetime.now(),
                     'role': 'user'  # Default role
                 })
-                print(f"✅ [FIRESTORE] Создан документ пользователя {user_id}")
             else:
-                print(f"✅ [FIRESTORE] Пользователь {user_id} уже существует")
+                print(f"✅ Пользователь {user_id} существует")
             
             # Add template to user's document_templates subcollection
-            print(f"📄 [FIRESTORE] Добавляю шаблон в коллекцию document_templates...")
             template_ref = user_ref.collection('document_templates').document()
             template_data = {
                 'template_name': template_name,
@@ -84,12 +81,11 @@ class FirestoreService:
             }
             
             template_ref.set(template_data)
-            print(f"✅ [FIRESTORE] Шаблон '{template_name}' успешно добавлен для пользователя {user_id}")
-            print(f"📁 [FIRESTORE] Путь к файлу: {file_path}")
+            print(f"✅ Шаблон '{template_name}' сохранен")
             return True
             
         except Exception as e:
-            print(f"❌ [FIRESTORE] Ошибка при добавлении шаблона: {e}")
+            print(f"❌ Ошибка при добавлении шаблона: {e}")
             return False
     
     async def get_templates(self, user_id: int) -> List[Dict[str, Any]]:

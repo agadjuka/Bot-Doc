@@ -293,7 +293,11 @@ class TemplateProcessorService:
                     field_counters[field_name] = 0
                 field_counters[field_name] += 1
                 
-                unique_field_name = f"{field_name}_{field_counters[field_name]}" if field_counters[field_name] > 1 else field_name
+                # Для реквизитов не добавляем номера - они должны быть единой зоной
+                if field_name == "реквизиты":
+                    unique_field_name = field_name
+                else:
+                    unique_field_name = f"{field_name}_{field_counters[field_name]}" if field_counters[field_name] > 1 else field_name
                 
                 # Apply edit to preview document
                 print(f"🎨 [SURGERY] Применяю правку к preview документу...")

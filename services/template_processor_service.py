@@ -157,11 +157,22 @@ class TemplateProcessorService:
             print(f"🔧 [SURGERY] Начинаю хирургию run-ов...")
             print(f"🔧 [SURGERY] Получено {len(edits_plan)} правок для применения")
             
-            # Step 1: Create deep copies of the original document
-            print(f"📋 [SURGERY] Создаю глубокие копии документа...")
-            preview_doc = copy.deepcopy(doc_object)
-            smart_template_doc = copy.deepcopy(doc_object)
-            print(f"✅ [SURGERY] Созданы две независимые копии документа")
+            # Step 1: Create completely independent copies of the original document
+            print(f"📋 [SURGERY] Создаю полностью независимые копии документа...")
+            
+            # Сохраняем оригинальный документ в байты и загружаем заново для каждой копии
+            original_bytes = BytesIO()
+            doc_object.save(original_bytes)
+            original_bytes.seek(0)
+            
+            # Создаем preview документ из байтов
+            preview_doc = Document(original_bytes)
+            original_bytes.seek(0)
+            
+            # Создаем smart template документ из байтов
+            smart_template_doc = Document(original_bytes)
+            
+            print(f"✅ [SURGERY] Созданы две полностью независимые копии документа")
             
             # Step 2: Rebuild coordinates dictionary for both copies
             print(f"🔍 [SURGERY] Перестраиваю словари координат для копий...")
@@ -171,8 +182,29 @@ class TemplateProcessorService:
             print(f"   - Preview: {len(preview_coords_dictionary)} run-ов")
             print(f"   - Smart template: {len(smart_template_coords_dictionary)} run-ов")
             
+            # Проверяем, что копии действительно независимы
+            print(f"🔍 [DEBUG] Проверяю независимость копий...")
+            print(f"🔍 [DEBUG] Оригинальный документ: {len(doc_object.paragraphs)} параграфов")
+            print(f"🔍 [DEBUG] Preview документ: {len(preview_doc.paragraphs)} параграфов")
+            print(f"🔍 [DEBUG] Smart template документ: {len(smart_template_doc.paragraphs)} параграфов")
+            
+            # КРИТИЧЕСКИ ВАЖНО: Проверяем, что run'ы в копиях действительно независимы
+            print(f"🔍 [DEBUG] Проверяю независимость run'ов...")
+            original_run_count = 0
+            for paragraph in doc_object.paragraphs:
+                original_run_count += len(paragraph.runs)
+            preview_run_count = 0
+            for paragraph in preview_doc.paragraphs:
+                preview_run_count += len(paragraph.runs)
+            print(f"🔍 [DEBUG] Оригинальный документ: {original_run_count} run'ов")
+            print(f"🔍 [DEBUG] Preview документ: {preview_run_count} run'ов")
+            
             # Step 3: Apply edits to both documents
             print(f"🔧 [SURGERY] Применяю правки к документам...")
+            
+            # Создаем счетчик для уникальности полей
+            field_counters = {}
+            
             for i, edit in enumerate(edits_plan):
                 run_id = edit.get('run_id')
                 field_name = edit.get('field_name')
@@ -199,20 +231,67 @@ class TemplateProcessorService:
                 print(f"   - Preview run text: '{preview_run.text[:50]}...'")
                 print(f"   - Smart template run text: '{smart_template_run.text[:50]}...'")
                 
+                # Создаем уникальное имя поля с номером
+                if field_name not in field_counters:
+                    field_counters[field_name] = 0
+                field_counters[field_name] += 1
+                
+                unique_field_name = f"{field_name}_{field_counters[field_name]}" if field_counters[field_name] > 1 else field_name
+                
                 # Apply edit to preview document
                 print(f"🎨 [SURGERY] Применяю правку к preview документу...")
-                preview_run.text = ''  # Clear existing text
-                preview_run.add_text(f"[{field_name}]")  # Add new marker text
+                print(f"🔍 [DEBUG] Preview run ДО изменений: '{preview_run.text}'")
+                
+                # КРИТИЧЕСКИ ВАЖНО: Изменяем run напрямую в документе
+                # Очищаем run и добавляем новый текст
+                preview_run.clear()
+                preview_run.add_text(f"[{unique_field_name}]")  # Add new marker text
                 preview_run.font.color.rgb = RGBColor(255, 0, 0)  # Red color
                 preview_run.bold = True  # Bold formatting
+                
+                print(f"🔍 [DEBUG] Preview run ПОСЛЕ изменений: '{preview_run.text}'")
                 print(f"✅ [SURGERY] Preview run обновлен: '{preview_run.text}' (красный, жирный)")
+                
+                # Проверяем, что изменение действительно применилось
+                if f"[{unique_field_name}]" not in preview_run.text:
+                    print(f"❌ [ERROR] Изменение НЕ применилось к preview run! Ожидалось: '[{unique_field_name}]', получено: '{preview_run.text}'")
+                else:
+                    print(f"✅ [VERIFY] Изменение подтверждено в preview run")
                 
                 # Apply edit to smart template document
                 print(f"🔧 [SURGERY] Применяю правку к smart template документу...")
-                smart_template_run.text = f"{{{{{field_name}}}}}"  # Add smart placeholder
+                smart_template_run.clear()
+                smart_template_run.add_text(f"{{{{{unique_field_name}}}}}")  # Add smart placeholder
                 print(f"✅ [SURGERY] Smart template run обновлен: '{smart_template_run.text}'")
+                
+                # Проверяем, что изменение действительно применилось
+                if f"{{{{{unique_field_name}}}}}" not in smart_template_run.text:
+                    print(f"❌ [ERROR] Изменение НЕ применилось к smart template run! Ожидалось: '{{{{{unique_field_name}}}}}', получено: '{smart_template_run.text}'")
+                else:
+                    print(f"✅ [VERIFY] Изменение подтверждено в smart template run")
             
             print(f"✅ [SURGERY] Все правки применены к документам")
+            
+            # КРИТИЧЕСКИ ВАЖНО: Проверяем preview_doc после всех изменений
+            print(f"🔍 [DEBUG] Проверяю preview_doc после всех изменений...")
+            preview_fields_after_edits = []
+            for paragraph in preview_doc.paragraphs:
+                for run in paragraph.runs:
+                    if '[' in run.text and ']' in run.text:
+                        preview_fields_after_edits.append(run.text)
+            
+            print(f"🔍 [DEBUG] Preview документ содержит {len(preview_fields_after_edits)} полей: {preview_fields_after_edits}")
+            
+            # ДОПОЛНИТЕЛЬНАЯ ПРОВЕРКА: Проверяем, что run'ы действительно изменились
+            print(f"🔍 [DEBUG] Проверяю конкретные run'ы в preview_doc...")
+            changed_runs = 0
+            for paragraph in preview_doc.paragraphs:
+                for run in paragraph.runs:
+                    if '[' in run.text and ']' in run.text:
+                        changed_runs += 1
+                        print(f"🔍 [DEBUG] Найден измененный run: '{run.text}'")
+            
+            print(f"🔍 [DEBUG] Всего измененных run'ов в preview_doc: {changed_runs}")
             
             # Step 4: Save both documents to bytes
             print(f"💾 [SURGERY] Сохраняю документы в байты...")
@@ -222,6 +301,31 @@ class TemplateProcessorService:
             preview_doc.save(preview_stream)
             preview_bytes = preview_stream.getvalue()
             print(f"✅ [SURGERY] Preview документ сохранен: {len(preview_bytes)} байт")
+            
+            # Проверяем содержимое preview документа перед сохранением
+            print(f"🔍 [DEBUG] Проверяю содержимое preview документа...")
+            preview_text = ""
+            field_markers_found = []
+            for paragraph in preview_doc.paragraphs:
+                for run in paragraph.runs:
+                    preview_text += run.text
+                    # Проверяем, есть ли поля в формате [Название поля]
+                    if '[' in run.text and ']' in run.text:
+                        field_markers_found.append(run.text)
+            
+            print(f"🔍 [DEBUG] Preview текст (первые 200 символов): {preview_text[:200]}...")
+            print(f"🔍 [DEBUG] Найдено полей в формате [Название]: {len(field_markers_found)}")
+            if field_markers_found:
+                print(f"🔍 [DEBUG] Все поля: {field_markers_found}")  # Показываем ВСЕ поля
+            else:
+                print(f"⚠️ [DEBUG] Поля в формате [Название] НЕ НАЙДЕНЫ в preview документе!")
+            
+            # Проверяем, что изменения сохранились в байтах
+            print(f"🔍 [DEBUG] Проверяю сохраненные байты...")
+            if len(preview_bytes) == 0:
+                print(f"❌ [ERROR] Preview bytes пустые!")
+            else:
+                print(f"✅ [VERIFY] Preview bytes сохранены: {len(preview_bytes)} байт")
             
             # Save smart template document
             smart_template_stream = BytesIO()

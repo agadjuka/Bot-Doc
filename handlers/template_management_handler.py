@@ -111,6 +111,7 @@ class TemplateManagementHandler:
             Conversation state
         """
         try:
+            print(f"🔍 [DEBUG] template_management_handler.handle_template_upload вызван")
             document = update.message.document
             user_id = update.effective_user.id
             
@@ -197,9 +198,44 @@ class TemplateManagementHandler:
             
             # Send the preview file as a document immediately
             print(f"📄 [TEMPLATE] Отправляю файл предпросмотра пользователю...")
+            print(f"🔍 [DEBUG] Preview bytes размер: {len(preview_bytes)} байт")
+            print(f"🔍 [DEBUG] Smart template bytes размер: {len(smart_template_bytes)} байт")
+            print(f"🔍 [DEBUG] Исходный файл размер: {len(file_bytes)} байт")
+            
+            # Проверяем, что preview_bytes не пустой и отличается от исходного файла
+            if len(preview_bytes) == len(file_bytes):
+                print(f"⚠️ [DEBUG] Preview bytes имеет тот же размер, что и исходный файл - возможно, изменения не применились")
+            else:
+                print(f"✅ [DEBUG] Preview bytes отличается от исходного файла по размеру")
+            
+            # КРИТИЧЕСКИ ВАЖНО: Проверяем содержимое preview_bytes перед отправкой
+            print(f"🔍 [DEBUG] Проверяю содержимое preview_bytes перед отправкой...")
+            preview_text_check = ""
+            field_markers_in_bytes = []
+            try:
+                # Создаем временный документ из preview_bytes для проверки
+                from docx import Document
+                import io
+                temp_doc = Document(io.BytesIO(preview_bytes))
+                for paragraph in temp_doc.paragraphs:
+                    for run in paragraph.runs:
+                        preview_text_check += run.text
+                        if '[' in run.text and ']' in run.text:
+                            field_markers_in_bytes.append(run.text)
+                
+                print(f"🔍 [DEBUG] Preview bytes содержит {len(field_markers_in_bytes)} полей: {field_markers_in_bytes}")
+                print(f"🔍 [DEBUG] Preview bytes текст (первые 200 символов): {preview_text_check[:200]}...")
+            except Exception as e:
+                print(f"❌ [ERROR] Ошибка при проверке preview_bytes: {e}")
+                import traceback
+                print(f"❌ [ERROR] Полный traceback: {traceback.format_exc()}")
+            
             from io import BytesIO
             preview_file = BytesIO(preview_bytes)
             preview_file.name = f"preview_{document.file_name}"
+            
+            print(f"🔍 [DEBUG] Создан preview_file с именем: {preview_file.name}")
+            print(f"🔍 [DEBUG] preview_file размер: {len(preview_file.getvalue())} байт")
             
             await analysis_msg.edit_text(
                 "✅ Готово! Я подготовил предпросмотр. Пожалуйста, откройте файл и убедитесь, что я правильно определил поля для заполнения (они выделены красным).\n\n"
@@ -210,6 +246,10 @@ class TemplateManagementHandler:
                 document=preview_file,
                 caption="📄 Файл предпросмотра готов"
             )
+            
+            print(f"🔍 [DEBUG] Файл отправлен пользователю")
+            print(f"🔍 [DEBUG] Отправленный файл: {preview_file.name}")
+            print(f"🔍 [DEBUG] Размер отправленного файла: {len(preview_file.getvalue())} байт")
             
             return self.config.AWAITING_TEMPLATE_NAME
             

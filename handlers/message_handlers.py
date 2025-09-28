@@ -91,13 +91,19 @@ class MessageHandlers(BaseMessageHandler):
         """Handle document uploads - redirect to dashboard handler for template processing"""
         from handlers.dashboard_handler import DashboardHandler
         
+        print(f"🔍 [DEBUG] message_handlers.handle_document вызван")
+        print(f"🔍 [DEBUG] context.user_data state: {context.user_data.get('state')}")
+        print(f"🔍 [DEBUG] dashboard_handler.AWAITING_TEMPLATE_FILE: {DashboardHandler.AWAITING_TEMPLATE_FILE}")
+        
         # Create dashboard handler instance
         dashboard_handler = DashboardHandler(self.config)
         
         # Check if user is in template addition state
         if context.user_data.get('state') == dashboard_handler.AWAITING_TEMPLATE_FILE:
+            print(f"🔍 [DEBUG] Перенаправляю в dashboard_handler.handle_template_file")
             return await dashboard_handler.handle_template_file(update, context)
         else:
+            print(f"🔍 [DEBUG] Показываю сообщение о том, что нужно использовать dashboard")
             # If not in template state, show message about using dashboard
             user_id = update.effective_user.id
             language = self.locale_manager.get_user_language(user_id)

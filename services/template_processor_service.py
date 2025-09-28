@@ -239,7 +239,9 @@ class TemplateProcessorService:
                     preview_run.bold = True
                     
                     # Smart template: replace with {{field_name}}
-                    smart_template_run.text = f"{{{{field_name}}}}"
+                    smart_template_run.text = f"{{{{{field_name}}}}}"
+                    # Remove highlighting from smart template as well
+                    self._remove_highlighting(smart_template_run)
             
             # Step 4: Save both documents to bytes
             # Save preview document

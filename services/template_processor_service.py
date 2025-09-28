@@ -191,25 +191,26 @@ class TemplateProcessorService:
             logger.error(f"Error indexing document runs: {e}")
             return "", {}
     
-    def _apply_edits_to_runs(self, doc_object: Document, edits_plan: List[Dict[str, str]], coords_dictionary: Dict[str, any]) -> Tuple[bytes, bytes]:
+    def _sync_docs_with_map(self, doc_object: Document, coords_dictionary: Dict[str, any], modified_map: str) -> Tuple[bytes, bytes]:
         """
-        Apply surgical edits to document runs based on Gemini's edits plan.
-        This is the heart of our "surgical" module for precise run-level modifications.
+        Synchronize documents with the modified map from Gemini.
+        This method replaces the old surgical approach with simple text synchronization.
         
         Args:
             doc_object: Original Document object
-            edits_plan: List of edit plans from Gemini with run_id and field_name
             coords_dictionary: Dictionary mapping run_id to run objects
+            modified_map: Modified text map from Gemini with run markers
             
         Returns:
             Tuple of (preview_bytes, smart_template_bytes)
         """
         try:
-            print(f"🔧 [SURGERY] Начинаю хирургию run-ов...")
-            print(f"🔧 [SURGERY] Получено {len(edits_plan)} правок для применения")
+            print(f"🔄 [SYNC] Начинаю синхронизацию документов с картой...")
+            print(f"🔄 [SYNC] Размер модифицированной карты: {len(modified_map)} символов")
+            print(f"🔄 [SYNC] Первые 200 символов карты: {modified_map[:200]}...")
             
             # Step 1: Create completely independent copies of the original document
-            print(f"📋 [SURGERY] Создаю полностью независимые копии документа...")
+            print(f"📋 [SYNC] Создаю полностью независимые копии документа...")
             
             # Сохраняем оригинальный документ в байты и загружаем заново для каждой копии
             original_bytes = BytesIO()
@@ -223,189 +224,126 @@ class TemplateProcessorService:
             # Создаем smart template документ из байтов
             smart_template_doc = Document(original_bytes)
             
-            print(f"✅ [SURGERY] Созданы две полностью независимые копии документа")
+            print(f"✅ [SYNC] Созданы две полностью независимые копии документа")
             
             # Step 2: Rebuild coordinates dictionary for both copies
-            print(f"🔍 [SURGERY] Перестраиваю словари координат для копий...")
+            print(f"🔍 [SYNC] Перестраиваю словари координат для копий...")
             _, preview_coords_dictionary = self._index_runs_and_build_map(preview_doc)
             _, smart_template_coords_dictionary = self._index_runs_and_build_map(smart_template_doc)
-            print(f"✅ [SURGERY] Словари координат перестроены:")
+            print(f"✅ [SYNC] Словари координат перестроены:")
             print(f"   - Preview: {len(preview_coords_dictionary)} run-ов")
             print(f"   - Smart template: {len(smart_template_coords_dictionary)} run-ов")
             
-            # Step 2.5: Remove all yellow highlighting from preview document
-            print(f"🧹 [SURGERY] Удаляю желтую заливку из preview документа...")
-            for run_id, run in preview_coords_dictionary.items():
-                self._remove_highlighting(run)
-            print(f"✅ [SURGERY] Желтая заливка удалена из preview документа")
+            # Step 3: Parse the modified map to extract run_id and new_text pairs
+            print(f"🔍 [SYNC] Парсинг модифицированной карты...")
+            sync_plan = self._parse_modified_map(modified_map)
+            print(f"✅ [SYNC] Извлечено {len(sync_plan)} пар для синхронизации")
             
-            # Проверяем, что копии действительно независимы
-            print(f"🔍 [DEBUG] Проверяю независимость копий...")
-            print(f"🔍 [DEBUG] Оригинальный документ: {len(doc_object.paragraphs)} параграфов")
-            print(f"🔍 [DEBUG] Preview документ: {len(preview_doc.paragraphs)} параграфов")
-            print(f"🔍 [DEBUG] Smart template документ: {len(smart_template_doc.paragraphs)} параграфов")
+            # Step 4: Apply synchronization to both documents
+            print(f"🔄 [SYNC] Применяю синхронизацию к документам...")
             
-            # КРИТИЧЕСКИ ВАЖНО: Проверяем, что run'ы в копиях действительно независимы
-            print(f"🔍 [DEBUG] Проверяю независимость run'ов...")
-            original_run_count = 0
-            for paragraph in doc_object.paragraphs:
-                original_run_count += len(paragraph.runs)
-            preview_run_count = 0
-            for paragraph in preview_doc.paragraphs:
-                preview_run_count += len(paragraph.runs)
-            print(f"🔍 [DEBUG] Оригинальный документ: {original_run_count} run'ов")
-            print(f"🔍 [DEBUG] Preview документ: {preview_run_count} run'ов")
-            
-            # Step 3: Apply edits to both documents
-            print(f"🔧 [SURGERY] Применяю правки к документам...")
-            
-            # Создаем счетчик для уникальности полей
-            field_counters = {}
-            
-            for i, edit in enumerate(edits_plan):
-                run_id = edit.get('run_id')
-                field_name = edit.get('field_name')
-                
-                print(f"🔧 [SURGERY] Правка {i+1}/{len(edits_plan)}: run_id='{run_id}', field_name='{field_name}'")
-                
-                if not run_id or not field_name:
-                    print(f"⚠️ [SURGERY] Пропускаю некорректную правку: {edit}")
-                    continue
+            for run_id, new_text in sync_plan.items():
+                print(f"🔄 [SYNC] Синхронизирую {run_id}: '{new_text[:50]}...'")
                 
                 # Find target runs in both documents
                 preview_run = preview_coords_dictionary.get(run_id)
                 smart_template_run = smart_template_coords_dictionary.get(run_id)
                 
                 if not preview_run:
-                    print(f"⚠️ [SURGERY] Run {run_id} не найден в preview документе")
+                    print(f"⚠️ [SYNC] Run {run_id} не найден в preview документе")
                     continue
                     
                 if not smart_template_run:
-                    print(f"⚠️ [SURGERY] Run {run_id} не найден в smart template документе")
+                    print(f"⚠️ [SYNC] Run {run_id} не найден в smart template документе")
                     continue
                 
-                print(f"🔍 [SURGERY] Найдены целевые run-ы:")
-                print(f"   - Preview run text: '{preview_run.text[:50]}...'")
-                print(f"   - Smart template run text: '{smart_template_run.text[:50]}...'")
+                # Synchronize text in both documents
+                preview_run.text = new_text
+                smart_template_run.text = new_text
                 
-                # Создаем уникальное имя поля с номером
-                if field_name not in field_counters:
-                    field_counters[field_name] = 0
-                field_counters[field_name] += 1
-                
-                # Для реквизитов не добавляем номера - они должны быть единой зоной
-                if field_name == "реквизиты":
-                    unique_field_name = field_name
-                else:
-                    unique_field_name = f"{field_name}_{field_counters[field_name]}" if field_counters[field_name] > 1 else field_name
-                
-                # Apply edit to preview document
-                print(f"🎨 [SURGERY] Применяю правку к preview документу...")
-                print(f"🔍 [DEBUG] Preview run ДО изменений: '{preview_run.text}'")
-                
-                # Удаляем желтую заливку перед применением изменений
-                self._remove_highlighting(preview_run)
-                
-                # КРИТИЧЕСКИ ВАЖНО: Изменяем run напрямую в документе
-                # Очищаем run и добавляем новый текст
-                preview_run.clear()
-                preview_run.add_text(f"[{unique_field_name}]")  # Add new marker text
-                preview_run.font.color.rgb = RGBColor(255, 0, 0)  # Red color
-                preview_run.bold = True  # Bold formatting
-                
-                print(f"🔍 [DEBUG] Preview run ПОСЛЕ изменений: '{preview_run.text}'")
-                print(f"✅ [SURGERY] Preview run обновлен: '{preview_run.text}' (красный, жирный)")
-                
-                # Проверяем, что изменение действительно применилось
-                if f"[{unique_field_name}]" not in preview_run.text:
-                    print(f"❌ [ERROR] Изменение НЕ применилось к preview run! Ожидалось: '[{unique_field_name}]', получено: '{preview_run.text}'")
-                else:
-                    print(f"✅ [VERIFY] Изменение подтверждено в preview run")
-                
-                # Apply edit to smart template document
-                print(f"🔧 [SURGERY] Применяю правку к smart template документу...")
-                smart_template_run.clear()
-                smart_template_run.add_text(f"{{{{{unique_field_name}}}}}")  # Add smart placeholder
-                print(f"✅ [SURGERY] Smart template run обновлен: '{smart_template_run.text}'")
-                
-                # Проверяем, что изменение действительно применилось
-                if f"{{{{{unique_field_name}}}}}" not in smart_template_run.text:
-                    print(f"❌ [ERROR] Изменение НЕ применилось к smart template run! Ожидалось: '{{{{{unique_field_name}}}}}', получено: '{smart_template_run.text}'")
-                else:
-                    print(f"✅ [VERIFY] Изменение подтверждено в smart template run")
+                print(f"✅ [SYNC] Синхронизирован {run_id}")
             
-            print(f"✅ [SURGERY] Все правки применены к документам")
+            print(f"✅ [SYNC] Синхронизация текста завершена")
             
-            # КРИТИЧЕСКИ ВАЖНО: Проверяем preview_doc после всех изменений
-            print(f"🔍 [DEBUG] Проверяю preview_doc после всех изменений...")
-            preview_fields_after_edits = []
-            for paragraph in preview_doc.paragraphs:
-                for run in paragraph.runs:
-                    if '[' in run.text and ']' in run.text:
-                        preview_fields_after_edits.append(run.text)
+            # Step 5: Post-processing - Apply styles and placeholders
+            print(f"🎨 [SYNC] Применяю стили и плейсхолдеры...")
             
-            print(f"🔍 [DEBUG] Preview документ содержит {len(preview_fields_after_edits)} полей: {preview_fields_after_edits}")
+            # Process preview document - apply red bold style to runs with markers
+            for run_id, run in preview_coords_dictionary.items():
+                if '[' in run.text and ']' in run.text:
+                    # Remove highlighting first
+                    self._remove_highlighting(run)
+                    # Apply red bold style
+                    run.font.color.rgb = RGBColor(255, 0, 0)
+                    run.bold = True
+                    print(f"🎨 [SYNC] Применен стиль к preview run {run_id}: '{run.text}'")
             
-            # ДОПОЛНИТЕЛЬНАЯ ПРОВЕРКА: Проверяем, что run'ы действительно изменились
-            print(f"🔍 [DEBUG] Проверяю конкретные run'ы в preview_doc...")
-            changed_runs = 0
-            for paragraph in preview_doc.paragraphs:
-                for run in paragraph.runs:
-                    if '[' in run.text and ']' in run.text:
-                        changed_runs += 1
-                        print(f"🔍 [DEBUG] Найден измененный run: '{run.text}'")
+            # Process smart template document - convert markers to placeholders
+            for run_id, run in smart_template_coords_dictionary.items():
+                if '[' in run.text and ']' in run.text:
+                    # Convert [field] to {{field}}
+                    new_text = run.text.replace('[', '{{').replace(']', '}}')
+                    run.text = new_text
+                    print(f"🔧 [SYNC] Конвертирован плейсхолдер в smart template run {run_id}: '{new_text}'")
             
-            print(f"🔍 [DEBUG] Всего измененных run'ов в preview_doc: {changed_runs}")
+            print(f"✅ [SYNC] Стили и плейсхолдеры применены")
             
-            # Step 4: Save both documents to bytes
-            print(f"💾 [SURGERY] Сохраняю документы в байты...")
+            # Step 6: Save both documents to bytes
+            print(f"💾 [SYNC] Сохраняю документы в байты...")
             
             # Save preview document
             preview_stream = BytesIO()
             preview_doc.save(preview_stream)
             preview_bytes = preview_stream.getvalue()
-            print(f"✅ [SURGERY] Preview документ сохранен: {len(preview_bytes)} байт")
-            
-            # Проверяем содержимое preview документа перед сохранением
-            print(f"🔍 [DEBUG] Проверяю содержимое preview документа...")
-            preview_text = ""
-            field_markers_found = []
-            for paragraph in preview_doc.paragraphs:
-                for run in paragraph.runs:
-                    preview_text += run.text
-                    # Проверяем, есть ли поля в формате [Название поля]
-                    if '[' in run.text and ']' in run.text:
-                        field_markers_found.append(run.text)
-            
-            print(f"🔍 [DEBUG] Preview текст (первые 200 символов): {preview_text[:200]}...")
-            print(f"🔍 [DEBUG] Найдено полей в формате [Название]: {len(field_markers_found)}")
-            if field_markers_found:
-                print(f"🔍 [DEBUG] Все поля: {field_markers_found}")  # Показываем ВСЕ поля
-            else:
-                print(f"⚠️ [DEBUG] Поля в формате [Название] НЕ НАЙДЕНЫ в preview документе!")
-            
-            # Проверяем, что изменения сохранились в байтах
-            print(f"🔍 [DEBUG] Проверяю сохраненные байты...")
-            if len(preview_bytes) == 0:
-                print(f"❌ [ERROR] Preview bytes пустые!")
-            else:
-                print(f"✅ [VERIFY] Preview bytes сохранены: {len(preview_bytes)} байт")
+            print(f"✅ [SYNC] Preview документ сохранен: {len(preview_bytes)} байт")
             
             # Save smart template document
             smart_template_stream = BytesIO()
             smart_template_doc.save(smart_template_stream)
             smart_template_bytes = smart_template_stream.getvalue()
-            print(f"✅ [SURGERY] Smart template документ сохранен: {len(smart_template_bytes)} байт")
+            print(f"✅ [SYNC] Smart template документ сохранен: {len(smart_template_bytes)} байт")
             
-            print(f"🎉 [SURGERY] Хирургия run-ов завершена успешно!")
+            print(f"🎉 [SYNC] Синхронизация документов завершена успешно!")
             return preview_bytes, smart_template_bytes
             
         except Exception as e:
-            print(f"❌ [SURGERY] Ошибка при хирургии run-ов: {e}")
-            logger.error(f"Error in surgical edits application: {e}")
+            print(f"❌ [SYNC] Ошибка при синхронизации документов: {e}")
+            logger.error(f"Error in document synchronization: {e}")
             import traceback
             traceback.print_exc()
             return b'', b''
+    
+    def _parse_modified_map(self, modified_map: str) -> Dict[str, str]:
+        """
+        Parse the modified map from Gemini to extract run_id and new_text pairs.
+        
+        Args:
+            modified_map: Modified text map with run markers from Gemini
+            
+        Returns:
+            Dictionary mapping run_id to new_text
+        """
+        try:
+            print(f"🔍 [PARSE] Парсинг модифицированной карты...")
+            
+            # Use regex to find all [run-ID]text patterns
+            pattern = r'\[(run-\d+)\]([^\[]*)'
+            matches = re.findall(pattern, modified_map)
+            
+            sync_plan = {}
+            for run_id, new_text in matches:
+                # Clean up the text (remove extra whitespace)
+                cleaned_text = new_text.strip()
+                sync_plan[run_id] = cleaned_text
+                print(f"🔍 [PARSE] Найдена пара: {run_id} -> '{cleaned_text[:50]}...'")
+            
+            print(f"✅ [PARSE] Извлечено {len(sync_plan)} пар из карты")
+            return sync_plan
+            
+        except Exception as e:
+            print(f"❌ [PARSE] Ошибка при парсинге карты: {e}")
+            logger.error(f"Error parsing modified map: {e}")
+            return {}
     
     async def analyze_and_prepare_templates(self, file_bytes: bytes, file_format: str = '.docx') -> Tuple[bytes, bytes]:
         """
@@ -459,28 +397,20 @@ class TemplateProcessorService:
                 logger.error("Empty response from Gemini")
                 return b'', b''
             
-            # Parse Gemini response to get edits plan
-            print(f"🔍 [GEMINI] Парсинг ответа от Gemini...")
-            edits_plan = self._parse_gemini_edits_plan(gemini_response)
+            print(f"✅ [GEMINI] Получен ответ от Gemini: {len(gemini_response)} символов")
+            print(f"🔍 [GEMINI] Первые 200 символов ответа: {gemini_response[:200]}...")
+            logger.debug(f"Получен ответ от Gemini: {gemini_response}")
             
-            if not edits_plan:
-                print(f"❌ [GEMINI] Не удалось распарсить план правок от Gemini")
-                logger.error("Failed to parse edits plan from Gemini response")
-                return b'', b''
-            
-            print(f"✅ [GEMINI] Получен план правок от Gemini: {len(edits_plan)} элементов")
-            logger.debug(f"Получен план правок от Gemini: {edits_plan}")
-            
-            # Step 4: Apply surgical edits to document
-            print(f"🔧 [ANALYZE] Применяю хирургические правки к документу...")
-            preview_bytes, smart_template_bytes = self._apply_edits_to_runs(doc_object, edits_plan, coords_dictionary)
+            # Step 4: Synchronize documents with modified map
+            print(f"🔄 [ANALYZE] Синхронизирую документы с модифицированной картой...")
+            preview_bytes, smart_template_bytes = self._sync_docs_with_map(doc_object, coords_dictionary, gemini_response)
             
             if not preview_bytes or not smart_template_bytes:
-                print(f"❌ [ANALYZE] Ошибка при применении хирургических правок")
-                logger.error("Failed to apply surgical edits to document")
+                print(f"❌ [ANALYZE] Ошибка при синхронизации документов")
+                logger.error("Failed to synchronize documents with modified map")
                 return b'', b''
             
-            print(f"✅ [ANALYZE] Хирургические правки применены успешно:")
+            print(f"✅ [ANALYZE] Синхронизация документов завершена успешно:")
             print(f"   - Preview файл: {len(preview_bytes)} байт")
             print(f"   - Smart template файл: {len(smart_template_bytes)} байт")
             
@@ -963,114 +893,6 @@ class TemplateProcessorService:
             print(f"❌ [REPLACE] Ошибка при применении замены: {e}")
             logger.error(f"Error applying replacement to paragraph: {e}")
     
-    def _parse_gemini_edits_plan(self, response: str) -> List[Dict[str, str]]:
-        """
-        Parse JSON response from Gemini containing edits plan.
-
-        Args:
-            response: Raw response from Gemini
-
-        Returns:
-            List of edit plan dictionaries with run_id and field_name
-        """
-        try:
-            print(f"🔍 [PARSE] Начинаю парсинг плана правок от Gemini...")
-            print(f"🔍 [PARSE] Длина ответа: {len(response)} символов")
-            print(f"🔍 [PARSE] Первые 200 символов ответа: {response[:200]}")
-            
-            # Clean the response (remove markdown formatting if present)
-            cleaned_response = response.strip()
-            
-            # Remove markdown code blocks
-            if cleaned_response.startswith('```json'):
-                cleaned_response = cleaned_response[7:]
-            elif cleaned_response.startswith('```'):
-                cleaned_response = cleaned_response[3:]
-            
-            if cleaned_response.endswith('```'):
-                cleaned_response = cleaned_response[:-3]
-            
-            cleaned_response = cleaned_response.strip()
-            
-            print(f"🔍 [PARSE] Очищенный ответ: {cleaned_response[:100]}...")
-            
-            # Try multiple parsing strategies
-            edits_plan = None
-            
-            # Strategy 1: Try to find JSON array in the response
-            json_start = cleaned_response.find('[')
-            json_end = cleaned_response.rfind(']') + 1
-            
-            if json_start != -1 and json_end > json_start:
-                json_text = cleaned_response[json_start:json_end]
-                print(f"🔍 [PARSE] Найден JSON массив: позиция {json_start} - {json_end}")
-                print(f"🔍 [PARSE] JSON текст: {json_text[:200]}...")
-                try:
-                    edits_plan = json.loads(json_text)
-                    print(f"✅ [PARSE] Успешно распарсен JSON массив")
-                except json.JSONDecodeError as e:
-                    print(f"❌ [PARSE] Ошибка парсинга JSON массива: {e}")
-                    edits_plan = None
-            
-            # Strategy 2: Try to parse the whole response
-            if edits_plan is None:
-                try:
-                    edits_plan = json.loads(cleaned_response)
-                    print(f"✅ [PARSE] Успешно распарсен весь ответ")
-                except json.JSONDecodeError as e:
-                    print(f"❌ [PARSE] Ошибка парсинга всего ответа: {e}")
-                    edits_plan = None
-            
-            # Strategy 3: Try to extract JSON using regex
-            if edits_plan is None:
-                json_pattern = r'\[.*?\]'
-                json_matches = re.findall(json_pattern, cleaned_response, re.DOTALL)
-                if json_matches:
-                    for json_match in json_matches:
-                        try:
-                            edits_plan = json.loads(json_match)
-                            print(f"✅ [PARSE] Успешно распарсен JSON через regex")
-                            break
-                        except json.JSONDecodeError:
-                            continue
-            
-            if edits_plan is None:
-                print(f"❌ [PARSE] Не удалось распарсить JSON из ответа")
-                logger.error("Could not parse JSON from Gemini response")
-                return []
-
-            if not isinstance(edits_plan, list):
-                logger.error("Gemini response is not a list")
-                print(f"❌ [PARSE] Ответ не является массивом: {type(edits_plan)}")
-                return []
-
-            # Validate that each item has required fields
-            valid_edits = []
-            for i, item in enumerate(edits_plan):
-                print(f"🔍 [PARSE] Проверяю элемент {i}: {item}")
-                if isinstance(item, dict) and 'run_id' in item and 'field_name' in item:
-                    valid_edits.append(item)
-                    print(f"✅ [PARSE] Найдено поле: {item['run_id']} -> '{item['field_name']}'")
-                else:
-                    print(f"⚠️ [PARSE] Некорректный формат элемента: {item}")
-            
-            print(f"🔍 [PARSE] Итоговый список валидных правок:")
-            for i, edit in enumerate(valid_edits):
-                print(f"🔍 [PARSE] Правка {i+1}: run_id='{edit['run_id']}', field_name='{edit['field_name']}'")
-            
-            logger.info(f"Successfully parsed {len(valid_edits)} valid edits from Gemini response")
-            return valid_edits
-
-        except json.JSONDecodeError as e:
-            logger.error(f"Error parsing JSON response from Gemini: {e}")
-            logger.error(f"Raw response: {response}")
-            print(f"❌ [PARSE] Ошибка парсинга JSON: {e}")
-            print(f"❌ [PARSE] Исходный ответ: {response[:500]}...")
-            return []
-        except Exception as e:
-            logger.error(f"Unexpected error parsing Gemini response: {e}")
-            print(f"❌ [PARSE] Неожиданная ошибка: {e}")
-            return []
 
     def _parse_gemini_response(self, response: str) -> List[Dict[str, str]]:
         """

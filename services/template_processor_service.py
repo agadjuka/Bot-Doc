@@ -123,29 +123,77 @@ class TemplateProcessorService:
             logger.error(f"Failed to initialize Gemini AI service: {e}")
             raise
     
-    def _index_runs_and_build_map(self, doc_object: Document) -> Tuple[str, Dict[str, any]]:
+    def _create_document_json_map(self, doc_object: Document) -> Tuple[Dict, Dict[str, any]]:
         """
-        Create detailed indexing of document at run level for precise analysis.
-        Now supports proper table processing with Markdown formatting.
+        Create structured JSON representation of document for Gemini analysis.
+        Creates hierarchical structure that mirrors document structure.
         
         Args:
             doc_object: python-docx Document object
             
         Returns:
-            Tuple of (map_for_gemini, coords_dictionary)
-            - map_for_gemini: Text map of document with run IDs for AI analysis
-            - coords_dictionary: Python dictionary for quick navigation by run IDs
+            Tuple of (document_json, coords_dictionary)
+            - document_json: Hierarchical JSON structure representing document
+            - coords_dictionary: Dictionary mapping run_id to run objects
         """
         try:
             # Initialize variables
-            map_for_gemini = ""
+            document_json = {'body': []}
             coords_dictionary = {}
             run_counter = 0
             
-            # Process document body elements in order (paragraphs and tables)
+            def process_paragraph(paragraph):
+                """Process a paragraph and return its JSON representation"""
+                nonlocal run_counter
+                paragraph_data = {'type': 'paragraph', 'runs': []}
+                
+                for run in paragraph.runs:
+                    # Generate unique ID for this run
+                    run_id = f"run-{run_counter}"
+                    
+                    # Add run to coordinates dictionary
+                    coords_dictionary[run_id] = run
+                    
+                    # Add run to paragraph data
+                    paragraph_data['runs'].append({
+                        'id': run_id,
+                        'text': run.text
+                    })
+                    
+                    # Increment counter
+                    run_counter += 1
+                
+                return paragraph_data
+            
+            def process_cell(cell):
+                """Process a table cell and return its JSON representation"""
+                cell_data = {'type': 'cell', 'content': []}
+                
+                for paragraph in cell.paragraphs:
+                    paragraph_data = process_paragraph(paragraph)
+                    cell_data['content'].append(paragraph_data)
+                
+                return cell_data
+            
+            def process_table(table):
+                """Process a table and return its JSON representation"""
+                table_data = {'type': 'table', 'rows': []}
+                
+                for row in table.rows:
+                    row_data = {'type': 'row', 'cells': []}
+                    
+                    for cell in row.cells:
+                        cell_data = process_cell(cell)
+                        row_data['cells'].append(cell_data)
+                    
+                    table_data['rows'].append(row_data)
+                
+                return table_data
+            
+            # Process document body elements in order
             for element in doc_object._body._body:
                 if element.tag.endswith('p'):  # Paragraph
-                    # Process paragraph
+                    # Find corresponding paragraph object
                     paragraph = None
                     for p in doc_object.paragraphs:
                         if p._element == element:
@@ -153,24 +201,11 @@ class TemplateProcessorService:
                             break
                     
                     if paragraph:
-                        for run in paragraph.runs:
-                            # Generate unique ID for this run
-                            run_id = f"run-{run_counter}"
-                            
-                            # Add run to coordinates dictionary (save direct reference to object)
-                            coords_dictionary[run_id] = run
-                            
-                            # Add run to map for Gemini
-                            map_for_gemini += f"[{run_id}]{run.text}"
-                            
-                            # Increment counter
-                            run_counter += 1
-                        
-                        # Add newline after each paragraph to preserve structure
-                        map_for_gemini += "\n"
+                        paragraph_data = process_paragraph(paragraph)
+                        document_json['body'].append(paragraph_data)
                 
                 elif element.tag.endswith('tbl'):  # Table
-                    # Process table
+                    # Find corresponding table object
                     table = None
                     for t in doc_object.tables:
                         if t._element == element:
@@ -178,70 +213,26 @@ class TemplateProcessorService:
                             break
                     
                     if table:
-                        # Build matrix of runs for this table
-                        table_matrix = []
-                        
-                        for row in table.rows:
-                            row_runs = []
-                            for cell in row.cells:
-                                cell_runs = []
-                                for paragraph in cell.paragraphs:
-                                    for run in paragraph.runs:
-                                        # Generate unique ID for this run
-                                        run_id = f"run-{run_counter}"
-                                        
-                                        # Add run to coordinates dictionary
-                                        coords_dictionary[run_id] = run
-                                        
-                                        # Add run to cell runs list
-                                        cell_runs.append(f"[{run_id}]{run.text}")
-                                        
-                                        # Increment counter
-                                        run_counter += 1
-                                
-                                # Join all runs in this cell with <br> for line breaks
-                                cell_text = "<br>".join(cell_runs)
-                                row_runs.append(cell_text)
-                            
-                            table_matrix.append(row_runs)
-                        
-                        # Generate Markdown table representation
-                        if table_matrix:
-                            # Add table header
-                            if len(table_matrix) > 0:
-                                header_row = "| " + " | ".join(table_matrix[0]) + " |"
-                                map_for_gemini += header_row + "\n"
-                                
-                                # Add separator row
-                                separator_row = "| " + " | ".join([":---"] * len(table_matrix[0])) + " |"
-                                map_for_gemini += separator_row + "\n"
-                                
-                                # Add data rows
-                                for row in table_matrix[1:]:
-                                    data_row = "| " + " | ".join(row) + " |"
-                                    map_for_gemini += data_row + "\n"
-                            
-                            # Add newline after table
-                            map_for_gemini += "\n"
+                        table_data = process_table(table)
+                        document_json['body'].append(table_data)
             
-            print(f"📊 Индексация: {len(coords_dictionary)} run-ов, {len(map_for_gemini)} символов")
-            print(f"🔍 Первые 10 run_id: {list(coords_dictionary.keys())[:10]}")
-            print(f"🔍 Последние 10 run_id: {list(coords_dictionary.keys())[-10:]}")
+            print(f"📊 JSON индексация: {len(coords_dictionary)} run-ов")
+            print(f"🔍 Структура документа: {len(document_json['body'])} элементов в body")
             
-            return map_for_gemini, coords_dictionary
+            return document_json, coords_dictionary
             
         except Exception as e:
-            print(f"❌ Ошибка индексации: {e}")
-            logger.error(f"Error indexing document runs: {e}")
-            return "", {}
+            print(f"❌ Ошибка JSON индексации: {e}")
+            logger.error(f"Error creating document JSON map: {e}")
+            return {'body': []}, {}
     
-    def _apply_edits_to_runs(self, doc_object: Document, edits_plan: List[Dict[str, str]], coords_dictionary: Dict[str, any]) -> Tuple[bytes, bytes]:
+    def _apply_edits_to_runs(self, doc_object: Document, edits_plan: List[Dict[str, any]], coords_dictionary: Dict[str, any]) -> Tuple[bytes, bytes]:
         """
         Apply edits to documents using surgical approach based on run IDs.
         
         Args:
             doc_object: Original Document object
-            edits_plan: List of edit dictionaries with run_id and field_name
+            edits_plan: List of edit dictionaries with run_ids (list) and field_name
             coords_dictionary: Dictionary mapping run_id to run objects
             
         Returns:
@@ -264,54 +255,61 @@ class TemplateProcessorService:
             smart_template_doc = Document(original_bytes)
             
             # Step 2: Rebuild coordinates dictionary for both copies
-            _, preview_coords_dictionary = self._index_runs_and_build_map(preview_doc)
-            _, smart_template_coords_dictionary = self._index_runs_and_build_map(smart_template_doc)
+            _, preview_coords_dictionary = self._create_document_json_map(preview_doc)
+            _, smart_template_coords_dictionary = self._create_document_json_map(smart_template_doc)
             
             # Step 3: Apply edits to both documents
             for i, edit in enumerate(edits_plan):
-                run_id = edit['run_id']
+                run_ids = edit['run_ids']  # Теперь это список
                 field_name = edit['field_name']
                 
-                print(f"🔍 Обрабатываю правку {i+1}/{len(edits_plan)}: run_id={run_id}, field_name='{field_name}'")
+                print(f"🔍 Обрабатываю правку {i+1}/{len(edits_plan)}: run_ids={run_ids}, field_name='{field_name}'")
                 
-                # Find target runs in both documents
-                preview_run = preview_coords_dictionary.get(run_id)
-                smart_template_run = smart_template_coords_dictionary.get(run_id)
-                
-                if not preview_run:
-                    print(f"❌ Run {run_id} не найден в preview документе")
-                    print(f"📊 Доступные run_id в preview: {list(preview_coords_dictionary.keys())[:10]}...")
-                    continue
+                # Обрабатываем каждый run_id в списке
+                for j, run_id in enumerate(run_ids):
+                    # Find target runs in both documents
+                    preview_run = preview_coords_dictionary.get(run_id)
+                    smart_template_run = smart_template_coords_dictionary.get(run_id)
                     
-                if not smart_template_run:
-                    print(f"❌ Run {run_id} не найден в smart_template документе")
-                    print(f"📊 Доступные run_id в smart_template: {list(smart_template_coords_dictionary.keys())[:10]}...")
-                    continue
-                
-                print(f"✅ Run {run_id} найден в обоих документах")
-                print(f"📝 Текущий текст run: '{preview_run.text}'")
-                
-                # Apply edits to both documents
-                if field_name == "":
-                    # Clear the run (empty string)
-                    print(f"🧹 Очищаю run {run_id}")
-                    preview_run.text = ""
-                    smart_template_run.text = ""
-                else:
-                    # Preview: replace with [field_name] and apply red bold style
-                    print(f"✏️ Заменяю run {run_id} на '[{field_name}]'")
-                    preview_run.text = f"[{field_name}]"
-                    # Remove highlighting first
-                    self._remove_highlighting(preview_run)
-                    # Apply red bold style
-                    preview_run.font.color.rgb = RGBColor(255, 0, 0)
-                    preview_run.bold = True
+                    if not preview_run:
+                        print(f"❌ Run {run_id} не найден в preview документе")
+                        print(f"📊 Доступные run_id в preview: {list(preview_coords_dictionary.keys())[:10]}...")
+                        continue
+                        
+                    if not smart_template_run:
+                        print(f"❌ Run {run_id} не найден в smart_template документе")
+                        print(f"📊 Доступные run_id в smart_template: {list(smart_template_coords_dictionary.keys())[:10]}...")
+                        continue
                     
-                    # Smart template: replace with {{field_name}}
-                    print(f"✏️ Заменяю run {run_id} в smart_template на '{{{{{field_name}}}}}'")
-                    smart_template_run.text = f"{{{{{field_name}}}}}"
-                    # Remove highlighting from smart template as well
-                    self._remove_highlighting(smart_template_run)
+                    print(f"✅ Run {run_id} найден в обоих документах")
+                    print(f"📝 Текущий текст run: '{preview_run.text}'")
+                    
+                    # Применяем хирургическую логику:
+                    if j == 0:  # Первый run в списке - вставляем маркер
+                        if field_name == "":
+                            # Clear the run (empty string)
+                            print(f"🧹 Очищаю первый run {run_id}")
+                            preview_run.text = ""
+                            smart_template_run.text = ""
+                        else:
+                            # Preview: replace with [field_name] and apply red bold style
+                            print(f"✏️ Заменяю первый run {run_id} на '[{field_name}]'")
+                            preview_run.text = f"[{field_name}]"
+                            # Remove highlighting first
+                            self._remove_highlighting(preview_run)
+                            # Apply red bold style
+                            preview_run.font.color.rgb = RGBColor(255, 0, 0)
+                            preview_run.bold = True
+                            
+                            # Smart template: replace with {{field_name}}
+                            print(f"✏️ Заменяю первый run {run_id} в smart_template на '{{{{{field_name}}}}}'")
+                            smart_template_run.text = f"{{{{{field_name}}}}}"
+                            # Remove highlighting from smart template as well
+                            self._remove_highlighting(smart_template_run)
+                    else:  # Остальные run-ы - очищаем (убираем лишние _______ и пробелы)
+                        print(f"🧹 Очищаю дополнительный run {run_id}")
+                        preview_run.text = ""
+                        smart_template_run.text = ""
                 
                 print(f"✅ Правка {i+1} применена успешно")
             
@@ -335,7 +333,7 @@ class TemplateProcessorService:
             return b'', b''
 
     
-    def _parse_gemini_edits_plan(self, gemini_response: str) -> List[Dict[str, str]]:
+    def _parse_gemini_edits_plan(self, gemini_response: str) -> List[Dict[str, any]]:
         """
         Parse JSON response from Gemini to extract edits plan.
         
@@ -343,7 +341,7 @@ class TemplateProcessorService:
             gemini_response: Raw JSON response from Gemini
             
         Returns:
-            List of edit dictionaries with run_id and field_name
+            List of edit dictionaries with run_ids (list) and field_name
         """
         try:
             # Clean the response (remove markdown formatting if present)
@@ -405,9 +403,13 @@ class TemplateProcessorService:
             # Validate that each item has required fields
             valid_edits = []
             for i, item in enumerate(edits_plan):
-                if isinstance(item, dict) and 'run_id' in item and 'field_name' in item:
-                    valid_edits.append(item)
-                    print(f"📝 Правка {len(valid_edits)}: run_id={item['run_id']}, field_name='{item['field_name']}'")
+                if isinstance(item, dict) and 'run_ids' in item and 'field_name' in item:
+                    # Проверяем, что run_ids это список
+                    if isinstance(item['run_ids'], list):
+                        valid_edits.append(item)
+                        print(f"📝 Правка {len(valid_edits)}: run_ids={item['run_ids']}, field_name='{item['field_name']}'")
+                    else:
+                        print(f"⚠️ run_ids должен быть списком в правке {i+1}: {item}")
                 else:
                     print(f"⚠️ Неверный формат правки {i+1}: {item}")
             
@@ -448,13 +450,22 @@ class TemplateProcessorService:
                 print(f"❌ Неподдерживаемый формат: {file_format}")
                 return b'', b''
             
-            # Step 2: Create detailed run-level indexing
-            map_for_gemini, coords_dictionary = self._index_runs_and_build_map(doc_object)
+            # Step 2: Create structured JSON representation
+            document_json, coords_dictionary = self._create_document_json_map(doc_object)
             
-            if not map_for_gemini.strip():
+            if not document_json.get('body'):
                 print(f"⚠️ Документ пустой")
                 logger.warning("Document appears to be empty or could not be indexed")
                 return b'', b''
+            
+            # Debug: Log first 500 characters of JSON and coords dictionary size
+            json_str = json.dumps(document_json, indent=2, ensure_ascii=False)
+            print(f"🔍 JSON структура (первые 500 символов):")
+            print(json_str[:500] + "..." if len(json_str) > 500 else json_str)
+            print(f"📊 Количество элементов в coords_dictionary: {len(coords_dictionary)}")
+            
+            # Convert JSON to text for Gemini (temporary approach)
+            map_for_gemini = json_str
             
             # Step 3: Call Gemini for document analysis
             print(f"🤖 Отправляю в Gemini...")

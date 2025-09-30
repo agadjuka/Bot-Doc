@@ -225,6 +225,8 @@ class TemplateProcessorService:
                             map_for_gemini += "\n"
             
             print(f"📊 Индексация: {len(coords_dictionary)} run-ов, {len(map_for_gemini)} символов")
+            print(f"🔍 Первые 10 run_id: {list(coords_dictionary.keys())[:10]}")
+            print(f"🔍 Последние 10 run_id: {list(coords_dictionary.keys())[-10:]}")
             
             return map_for_gemini, coords_dictionary
             
@@ -270,20 +272,34 @@ class TemplateProcessorService:
                 run_id = edit['run_id']
                 field_name = edit['field_name']
                 
+                print(f"🔍 Обрабатываю правку {i+1}/{len(edits_plan)}: run_id={run_id}, field_name='{field_name}'")
+                
                 # Find target runs in both documents
                 preview_run = preview_coords_dictionary.get(run_id)
                 smart_template_run = smart_template_coords_dictionary.get(run_id)
                 
-                if not preview_run or not smart_template_run:
+                if not preview_run:
+                    print(f"❌ Run {run_id} не найден в preview документе")
+                    print(f"📊 Доступные run_id в preview: {list(preview_coords_dictionary.keys())[:10]}...")
                     continue
+                    
+                if not smart_template_run:
+                    print(f"❌ Run {run_id} не найден в smart_template документе")
+                    print(f"📊 Доступные run_id в smart_template: {list(smart_template_coords_dictionary.keys())[:10]}...")
+                    continue
+                
+                print(f"✅ Run {run_id} найден в обоих документах")
+                print(f"📝 Текущий текст run: '{preview_run.text}'")
                 
                 # Apply edits to both documents
                 if field_name == "":
                     # Clear the run (empty string)
+                    print(f"🧹 Очищаю run {run_id}")
                     preview_run.text = ""
                     smart_template_run.text = ""
                 else:
                     # Preview: replace with [field_name] and apply red bold style
+                    print(f"✏️ Заменяю run {run_id} на '[{field_name}]'")
                     preview_run.text = f"[{field_name}]"
                     # Remove highlighting first
                     self._remove_highlighting(preview_run)
@@ -292,9 +308,12 @@ class TemplateProcessorService:
                     preview_run.bold = True
                     
                     # Smart template: replace with {{field_name}}
+                    print(f"✏️ Заменяю run {run_id} в smart_template на '{{{{{field_name}}}}}'")
                     smart_template_run.text = f"{{{{{field_name}}}}}"
                     # Remove highlighting from smart template as well
                     self._remove_highlighting(smart_template_run)
+                
+                print(f"✅ Правка {i+1} применена успешно")
             
             # Step 4: Save both documents to bytes
             # Save preview document
@@ -388,8 +407,11 @@ class TemplateProcessorService:
             for i, item in enumerate(edits_plan):
                 if isinstance(item, dict) and 'run_id' in item and 'field_name' in item:
                     valid_edits.append(item)
+                    print(f"📝 Правка {len(valid_edits)}: run_id={item['run_id']}, field_name='{item['field_name']}'")
+                else:
+                    print(f"⚠️ Неверный формат правки {i+1}: {item}")
             
-            print(f"✅ Извлечено {len(valid_edits)} правок")
+            print(f"✅ Извлечено {len(valid_edits)} валидных правок из {len(edits_plan)} элементов")
             logger.info(f"Successfully parsed {len(valid_edits)} valid edits from Gemini response")
             return valid_edits
             

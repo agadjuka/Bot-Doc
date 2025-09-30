@@ -147,6 +147,7 @@ class TemplateProcessorService:
                 nonlocal run_counter
                 paragraph_data = {'type': 'paragraph', 'runs': []}
                 
+                # Process all runs in the paragraph
                 for run in paragraph.runs:
                     # Generate unique ID for this run
                     run_id = f"run-{run_counter}"
@@ -158,6 +159,24 @@ class TemplateProcessorService:
                     paragraph_data['runs'].append({
                         'id': run_id,
                         'text': run.text
+                    })
+                    
+                    # Increment counter
+                    run_counter += 1
+                
+                # If paragraph has no runs (empty paragraph), create a dummy run
+                if not paragraph.runs:
+                    # Generate unique ID for dummy run
+                    run_id = f"run-{run_counter}"
+                    
+                    # Create a dummy run by adding a run to the paragraph
+                    dummy_run = paragraph.add_run("")
+                    coords_dictionary[run_id] = dummy_run
+                    
+                    # Add dummy run to paragraph data
+                    paragraph_data['runs'].append({
+                        'id': run_id,
+                        'text': ""
                     })
                     
                     # Increment counter
@@ -228,11 +247,11 @@ class TemplateProcessorService:
     
     def _apply_edits_to_runs(self, doc_object: Document, edits_plan: List[Dict[str, any]], coords_dictionary: Dict[str, any]) -> Tuple[bytes, bytes]:
         """
-        Apply edits to documents using surgical approach based on run IDs.
+        Apply edits to documents using surgical approach based on new plan format.
         
         Args:
             doc_object: Original Document object
-            edits_plan: List of edit dictionaries with run_ids (list) and field_name
+            edits_plan: List of edit dictionaries with target_run_ids, context_run_ids and field_name
             coords_dictionary: Dictionary mapping run_id to run objects
             
         Returns:
@@ -258,58 +277,73 @@ class TemplateProcessorService:
             _, preview_coords_dictionary = self._create_document_json_map(preview_doc)
             _, smart_template_coords_dictionary = self._create_document_json_map(smart_template_doc)
             
-            # Step 3: Apply edits to both documents
+            # Step 3: Apply edits to both documents using new surgical algorithm
             for i, edit in enumerate(edits_plan):
-                run_ids = edit['run_ids']  # Теперь это список
-                field_name = edit['field_name']
+                target_run_ids = edit.get('target_run_ids', [])
+                context_run_ids = edit.get('context_run_ids', [])
+                field_name = edit.get('field_name', '')
                 
-                print(f"🔍 Обрабатываю правку {i+1}/{len(edits_plan)}: run_ids={run_ids}, field_name='{field_name}'")
+                print(f"🔍 Обрабатываю правку {i+1}/{len(edits_plan)}:")
+                print(f"   target_run_ids={target_run_ids}")
+                print(f"   context_run_ids={context_run_ids}")
+                print(f"   field_name='{field_name}'")
                 
-                # Обрабатываем каждый run_id в списке
-                for j, run_id in enumerate(run_ids):
-                    # Find target runs in both documents
+                # Первый проход (Зачистка): Очищаем все target_run_ids
+                print(f"🧹 Первый проход: зачистка {len(target_run_ids)} целевых run-ов")
+                for run_id in target_run_ids:
                     preview_run = preview_coords_dictionary.get(run_id)
                     smart_template_run = smart_template_coords_dictionary.get(run_id)
                     
-                    if not preview_run:
-                        print(f"❌ Run {run_id} не найден в preview документе")
-                        print(f"📊 Доступные run_id в preview: {list(preview_coords_dictionary.keys())[:10]}...")
-                        continue
-                        
-                    if not smart_template_run:
-                        print(f"❌ Run {run_id} не найден в smart_template документе")
-                        print(f"📊 Доступные run_id в smart_template: {list(smart_template_coords_dictionary.keys())[:10]}...")
-                        continue
+                    if preview_run:
+                        print(f"   Очищаю preview run {run_id}: '{preview_run.text}' -> ''")
+                        preview_run.text = ''
+                    else:
+                        print(f"   ❌ Run {run_id} не найден в preview документе")
                     
-                    print(f"✅ Run {run_id} найден в обоих документах")
-                    print(f"📝 Текущий текст run: '{preview_run.text}'")
+                    if smart_template_run:
+                        print(f"   Очищаю smart_template run {run_id}: '{smart_template_run.text}' -> ''")
+                        smart_template_run.text = ''
+                    else:
+                        print(f"   ❌ Run {run_id} не найден в smart_template документе")
+                
+                # Второй проход (Вставка и стилизация): Вставляем маркер в первый target_run
+                if target_run_ids and field_name:
+                    first_target_run_id = target_run_ids[0]
+                    preview_run = preview_coords_dictionary.get(first_target_run_id)
+                    smart_template_run = smart_template_coords_dictionary.get(first_target_run_id)
                     
-                    # Применяем хирургическую логику:
-                    if j == 0:  # Первый run в списке - вставляем маркер
-                        if field_name == "":
-                            # Clear the run (empty string)
-                            print(f"🧹 Очищаю первый run {run_id}")
-                            preview_run.text = ""
-                            smart_template_run.text = ""
-                        else:
-                            # Preview: replace with [field_name] and apply red bold style
-                            print(f"✏️ Заменяю первый run {run_id} на '[{field_name}]'")
-                            preview_run.text = f"[{field_name}]"
-                            # Remove highlighting first
-                            self._remove_highlighting(preview_run)
-                            # Apply red bold style
+                    if preview_run:
+                        print(f"✏️ Второй проход: вставляю маркер в preview run {first_target_run_id}")
+                        preview_run.text = f"[{field_name}]"
+                        # Убираем подсветку и применяем красный жирный стиль
+                        self._remove_highlighting(preview_run)
+                        # Проверяем, что это действительно Run объект, а не Paragraph
+                        if hasattr(preview_run, 'font'):
                             preview_run.font.color.rgb = RGBColor(255, 0, 0)
                             preview_run.bold = True
-                            
-                            # Smart template: replace with {{field_name}}
-                            print(f"✏️ Заменяю первый run {run_id} в smart_template на '{{{{{field_name}}}}}'")
-                            smart_template_run.text = f"{{{{{field_name}}}}}"
-                            # Remove highlighting from smart template as well
-                            self._remove_highlighting(smart_template_run)
-                    else:  # Остальные run-ы - очищаем (убираем лишние _______ и пробелы)
-                        print(f"🧹 Очищаю дополнительный run {run_id}")
-                        preview_run.text = ""
-                        smart_template_run.text = ""
+                        print(f"   Результат: '{preview_run.text}' (красный, жирный)")
+                    else:
+                        print(f"   ❌ Первый target run {first_target_run_id} не найден в preview")
+                    
+                    if smart_template_run:
+                        print(f"✏️ Второй проход: вставляю маркер в smart_template run {first_target_run_id}")
+                        smart_template_run.text = f"{{{{{field_name}}}}}"
+                        # Убираем подсветку
+                        self._remove_highlighting(smart_template_run)
+                        print(f"   Результат: '{smart_template_run.text}'")
+                    else:
+                        print(f"   ❌ Первый target run {first_target_run_id} не найден в smart_template")
+                
+                # Третий проход (Очистка от желтизны): Убираем подсветку с context_run_ids
+                print(f"🧽 Третий проход: очистка от желтизны {len(context_run_ids)} контекстных run-ов")
+                for run_id in context_run_ids:
+                    preview_run = preview_coords_dictionary.get(run_id)
+                    
+                    if preview_run:
+                        print(f"   Убираю подсветку с preview run {run_id}: '{preview_run.text}'")
+                        self._remove_highlighting(preview_run)
+                    else:
+                        print(f"   ❌ Context run {run_id} не найден в preview документе")
                 
                 print(f"✅ Правка {i+1} применена успешно")
             
@@ -341,7 +375,7 @@ class TemplateProcessorService:
             gemini_response: Raw JSON response from Gemini
             
         Returns:
-            List of edit dictionaries with run_ids (list) and field_name
+            List of edit dictionaries with target_run_ids, context_run_ids and field_name
         """
         try:
             # Clean the response (remove markdown formatting if present)
@@ -400,18 +434,42 @@ class TemplateProcessorService:
                 logger.error("Gemini response is not a list")
                 return []
             
-            # Validate that each item has required fields
+            # Validate that each item has required fields for new format
             valid_edits = []
             for i, item in enumerate(edits_plan):
-                if isinstance(item, dict) and 'run_ids' in item and 'field_name' in item:
-                    # Проверяем, что run_ids это список
-                    if isinstance(item['run_ids'], list):
-                        valid_edits.append(item)
-                        print(f"📝 Правка {len(valid_edits)}: run_ids={item['run_ids']}, field_name='{item['field_name']}'")
+                if isinstance(item, dict):
+                    # Check for new format fields
+                    if 'target_run_ids' in item and 'context_run_ids' in item and 'field_name' in item:
+                        # Validate that both run_ids fields are lists
+                        if (isinstance(item['target_run_ids'], list) and 
+                            isinstance(item['context_run_ids'], list)):
+                            valid_edits.append(item)
+                            print(f"📝 Правка {len(valid_edits)} (новый формат):")
+                            print(f"   target_run_ids={item['target_run_ids']}")
+                            print(f"   context_run_ids={item['context_run_ids']}")
+                            print(f"   field_name='{item['field_name']}'")
+                        else:
+                            print(f"⚠️ target_run_ids и context_run_ids должны быть списками в правке {i+1}: {item}")
+                    # Check for old format fields (backward compatibility)
+                    elif 'run_ids' in item and 'field_name' in item:
+                        if isinstance(item['run_ids'], list):
+                            # Convert old format to new format
+                            converted_item = {
+                                'target_run_ids': item['run_ids'],
+                                'context_run_ids': [],  # Empty context for old format
+                                'field_name': item['field_name']
+                            }
+                            valid_edits.append(converted_item)
+                            print(f"📝 Правка {len(valid_edits)} (старый формат, конвертирован):")
+                            print(f"   target_run_ids={converted_item['target_run_ids']}")
+                            print(f"   context_run_ids={converted_item['context_run_ids']}")
+                            print(f"   field_name='{converted_item['field_name']}'")
+                        else:
+                            print(f"⚠️ run_ids должен быть списком в правке {i+1}: {item}")
                     else:
-                        print(f"⚠️ run_ids должен быть списком в правке {i+1}: {item}")
-                else:
-                    print(f"⚠️ Неверный формат правки {i+1}: {item}")
+                        print(f"⚠️ Неверный формат правки {i+1}: {item}")
+                        print(f"   Ожидаются поля: target_run_ids, context_run_ids, field_name (новый формат)")
+                        print(f"   или: run_ids, field_name (старый формат)")
             
             print(f"✅ Извлечено {len(valid_edits)} валидных правок из {len(edits_plan)} элементов")
             logger.info(f"Successfully parsed {len(valid_edits)} valid edits from Gemini response")
